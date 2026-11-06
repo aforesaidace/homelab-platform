@@ -1,0 +1,127 @@
+{
+  "id": null,
+  "uid": "gpu-hosts",
+  "title": "Personal GPU Hosts",
+  "tags": ["homelab", "gpu", "personal"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "type": "query",
+        "label": "Host",
+        "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+        "query": "label_values(amdgpu_busy_percent, instance)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "GPU Utilization %",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+          "expr": "amdgpu_busy_percent{instance=~\"$host\"}",
+          "legendFormat": "{{instance}} ({{pci}})"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "VRAM Used",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+          "expr": "amdgpu_vram_used_bytes{instance=~\"$host\"}",
+          "legendFormat": "{{instance}} ({{pci}}) used"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+          "expr": "amdgpu_vram_total_bytes{instance=~\"$host\"}",
+          "legendFormat": "{{instance}} ({{pci}}) total"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "GPU Temperature",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+          "expr": "amdgpu_temp_celsius{instance=~\"$host\"}",
+          "legendFormat": "{{instance}} ({{pci}})"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "GPU Power Draw",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+          "expr": "amdgpu_power_watts{instance=~\"$host\"}",
+          "legendFormat": "{{instance}} ({{pci}})"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Current GPU Busy % (at a glance)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+          "expr": "amdgpu_busy_percent{instance=~\"$host\"}",
+          "legendFormat": "{{instance}} ({{pci}})"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# Managed by Ansible — do not edit manually
+# Role: loki
+
+[Unit]
+Description=Loki Log Aggregation System
+Documentation=https://grafana.com/docs/loki/latest/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ loki_user }}
+Group={{ loki_group }}
+ExecStart={{ loki_install_dir }}/loki \
+  -config.file={{ loki_config_dir }}/loki.yml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+SendSIGKILL=no
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

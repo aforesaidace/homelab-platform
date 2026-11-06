@@ -1,0 +1,13 @@
+---
+# Where the weekly doc-drift reconciliation runs. The n8n LXC already holds
+# a repo checkout at /opt/ansible-runner/homelab and runs fleet_health_check
+# the same way (systemd timer, not cron - see docs/todo.md's silent-cron note).
+drift_check_dir: /opt/drift-check
+drift_check_repo: /opt/ansible-runner/homelab
+drift_check_webhook: http://10.20.30.20:5678/webhook/drift-check
+# Credentials come from OpenBao (secret/proxmox + secret/homepage) via the
+# drift-check-kv AppRole - read-only reuse of the existing proxmox2netbox
+# PVEAuditor token and the real NPM admin login, no drift-check-owned secret.
+drift_check_openbao_addr: http://10.20.30.22:8200
+# OnCalendar for the timer - weekly, Monday 08:15 local.
+drift_check_schedule: "Mon *-*-* 08:15:00"

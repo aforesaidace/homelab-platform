@@ -1,0 +1,24 @@
+---
+- name: Include user tasks
+  ansible.builtin.import_tasks: user.yml
+  tags: [install, user]
+
+- name: Include install tasks
+  ansible.builtin.import_tasks: install.yml
+  tags: [install]
+
+- name: Include directories tasks
+  ansible.builtin.import_tasks: directories.yml
+  tags: [install, configure]
+
+- name: Include configure tasks
+  ansible.builtin.import_tasks: configure.yml
+  tags: [configure]
+
+- name: Include service tasks
+  ansible.builtin.import_tasks: service.yml
+  tags: [service]
+
+- name: Include Nautobot file_sd sync tasks
+  ansible.builtin.import_tasks: nautobot_sd.yml
+  tags: [nautobot_sd]

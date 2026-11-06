@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Managed by Ansible — do not edit manually
+# Role: keepalived
+#
+# VRRP tracks network-interface heartbeats between peers, not whether the
+# local service is actually healthy - a host can be fully reachable while
+# AdGuardHome itself has crashed. This script gives keepalived a real
+# application-level health signal: fail (non-zero exit) if AdGuardHome
+# isn't running, or if it can't actually answer a real DNS query.
+set -euo pipefail
+
+systemctl is-active --quiet AdGuardHome || exit 1
+dig +short +timeout=2 +tries=1 @127.0.0.1 -p {{ keepalived_health_check_port }} pve1.example.lab >/dev/null || exit 1

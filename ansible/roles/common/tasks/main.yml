@@ -1,0 +1,50 @@
+---
+- name: Include package tasks
+  ansible.builtin.import_tasks: packages.yml
+  tags: [install, packages]
+
+- name: Include timezone tasks
+  ansible.builtin.import_tasks: timezone.yml
+  tags: [configure, timezone]
+
+- name: Include journald retention tasks
+  ansible.builtin.import_tasks: journald.yml
+  tags: [configure, journald]
+
+- name: Include SSH tasks
+  ansible.builtin.import_tasks: ssh.yml
+  tags: [configure, ssh]
+  when: inventory_hostname not in groups['proxmox_nodes']
+
+- name: Include user tasks
+  ansible.builtin.import_tasks: user.yml
+  tags: [configure, users]
+  when: inventory_hostname not in groups['proxmox_nodes']
+
+- name: Include node_exporter tasks
+  ansible.builtin.import_tasks: node_exporter.yml
+  tags: [install, configure, node_exporter]
+  when: inventory_hostname not in groups['proxmox_nodes']
+
+- name: Include unattended-upgrades tasks
+  ansible.builtin.import_tasks: unattended_upgrades.yml
+  tags: [install, configure, upgrades]
+  # apt-only; freeipa (Rocky 9) has no automatic updates yet (docs/todo.md).
+  when:
+    - inventory_hostname not in groups['proxmox_nodes']
+    - ansible_os_family == 'Debian'
+
+- name: Include docker restart-check tasks
+  ansible.builtin.import_tasks: docker_restart_check.yml
+  tags: [install, configure, docker_restart_check]
+  when: inventory_hostname not in groups['proxmox_nodes']
+
+- name: Include pending-updates check tasks
+  ansible.builtin.import_tasks: pending_updates.yml
+  tags: [install, configure, pending_updates]
+  when: inventory_hostname not in groups['proxmox_nodes']
+
+- name: Include docker image-prune tasks
+  ansible.builtin.import_tasks: docker_image_prune.yml
+  tags: [install, configure, docker_image_prune]
+  when: inventory_hostname not in groups['proxmox_nodes']

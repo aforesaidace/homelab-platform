@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ansible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Ansible, linters and collections
+        run: |
+          pip install --quiet ansible ansible-lint yamllint
+          ansible-galaxy collection install -r ansible/requirements.yml
+      - name: yamllint
+        run: yamllint -d relaxed ansible/
+      - name: ansible-lint
+        run: ansible-lint ansible/roles/ ansible/playbooks/
+      - name: Playbook syntax check
+        run: |
+          for pb in ansible/playbooks/*.yml; do
+            echo "=== $pb"
+            ansible-playbook -i ansible/inventory.yml "$pb" --syntax-check
+          done
+
+  opentofu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+      - name: Format check
+        run: tofu -chdir=tofu fmt -check -recursive
+      - name: Validate
+        run: |
+          tofu -chdir=tofu init -backend=false -input=false
+          tofu -chdir=tofu validate
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

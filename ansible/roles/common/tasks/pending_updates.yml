@@ -1,0 +1,65 @@
+---
+- name: Check if apt is present
+  ansible.builtin.command: which apt
+  register: _common_apt_check
+  changed_when: false
+  failed_when: false
+
+- name: Deploy pending-updates check script (apt hosts only)
+  ansible.builtin.template:
+    src: pending_updates_check.sh.j2
+    dest: /usr/local/bin/pending_updates_check.sh
+    owner: root
+    group: root
+    mode: '0755'
+  when: _common_apt_check.rc == 0
+
+- name: Deploy pending_updates_check systemd service (apt hosts only)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/pending-updates-check.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by Ansible — do not edit manually
+      # Role: common
+      [Unit]
+      Description=Write pending-update counts to node_exporter textfile collector
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/pending_updates_check.sh
+  when: _common_apt_check.rc == 0
+  notify: Reload systemd
+
+- name: Deploy pending_updates_check systemd timer (apt hosts only)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/pending-updates-check.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by Ansible — do not edit manually
+      # Role: common
+      [Unit]
+      Description=Run pending_updates_check.sh every 15 minutes
+
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=15min
+      AccuracySec=1min
+
+      [Install]
+      WantedBy=timers.target
+  when: _common_apt_check.rc == 0
+  notify: Reload systemd
+
+- name: Enable and start pending_updates_check timer (apt hosts only)
+  ansible.builtin.systemd:
+    name: pending-updates-check.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  # --check can't enable a timer this same run would create; real runs must not fail silently.
+  ignore_errors: "{{ ansible_check_mode }}"
+  when: _common_apt_check.rc == 0

@@ -1,0 +1,430 @@
+---
+# ansible/playbooks/k3s-addons.yml
+#
+# Post-install add-ons for K3s cluster. Assumes the cluster is already
+# bootstrapped and the first CP node (k3s-cp1) is reachable.
+#
+# Installs in order:
+#   1. Helm CLI (on the CP node)
+#   2. MetalLB + IPPool
+#   3. nginx-ingress
+#   4. cert-manager + ClusterIssuer (staging)
+#   5. local-path-provisioner (NFS-backed via sharedFileSystemPath)
+#   6. ArgoCD + root app bootstrap
+#
+# Usage:
+#   ansible-playbook -i ansible/inventory.yml ansible/playbooks/k3s-addons.yml
+#
+# This targets the first CP node (k3s-cp1) and uses kubectl/helm on the node
+# via shell commands, since K3s nodes have kubectl built in.
+
+- name: Install helm on the control node if needed
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: false
+  tags: [helm, k3s-addons]
+
+  tasks:
+    - name: Check if helm is installed
+      ansible.builtin.command: which helm
+      register: helm_check
+      changed_when: false
+      failed_when: false
+
+    - name: Download and install helm
+      when: helm_check.rc != 0
+      block:
+        - name: Download helm installer
+          ansible.builtin.get_url:
+            url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+            dest: /tmp/get_helm.sh
+            mode: "0700"
+
+        - name: Run helm installer
+          ansible.builtin.command: /tmp/get_helm.sh
+          args:
+            creates: /usr/local/bin/helm
+
+        - name: Clean up installer
+          ansible.builtin.file:
+            path: /tmp/get_helm.sh
+            state: absent
+
+    - name: Ensure helm is in PATH (verify)
+      ansible.builtin.command: helm version --short
+      changed_when: false
+      register: helm_version
+    - name: Debug helm version
+      ansible.builtin.debug:
+        msg: "Helm {{ helm_version.stdout }}"
+
+- name: Add Helm repositories
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: false
+  tags: [helm, k3s-addons]
+
+  tasks:
+    - name: Add helm repositories
+      kubernetes.core.helm_repository:
+        name: "{{ item.name }}"
+        repo_url: "{{ item.url }}"
+        force_update: true
+      register: helm_repos
+      loop:
+        - { name: metallb, url: https://metallb.github.io/metallb }
+        - { name: ingress-nginx, url: https://kubernetes.github.io/ingress-nginx }
+        - { name: jetstack, url: https://charts.jetstack.io }
+        - { name: argo, url: https://argoproj.github.io/argo-helm }
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Install MetalLB
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: false
+  tags: [metallb, k3s-addons]
+
+  tasks:
+    - name: Create metallb-system namespace
+      kubernetes.core.k8s:
+        name: metallb-system
+        api_version: v1
+        kind: Namespace
+        state: present
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Install MetalLB via Helm
+      kubernetes.core.helm:
+        name: metallb
+        chart_ref: metallb/metallb
+        release_namespace: metallb-system
+        create_namespace: false
+        state: present
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Wait for MetalLB controller and speaker pods
+      ansible.builtin.shell: |
+        kubectl wait --for=condition=Ready pods -n metallb-system --all --timeout=120s
+      args:
+        executable: /bin/bash
+      changed_when: false
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Apply MetalLB IPAddressPool
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: metallb.io/v1beta1
+          kind: IPAddressPool
+          metadata:
+            name: default-pool
+            namespace: metallb-system
+          spec:
+            # .51-.59 were handed to LXCs/VMs (atuin, postgres, ..., builder)
+            # before anyone noticed this pool; narrowed 2026-10-29 to the
+            # one address in use (ingress-nginx) plus a range nothing else
+            # has. Never give a host an IP in here.
+            addresses:
+              - 10.20.30.50/32
+              - 10.20.30.70-10.20.30.79
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Apply MetalLB L2Advertisement
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: default-l2
+            namespace: metallb-system
+          spec:
+            ipAddressPools:
+              - default-pool
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Install nginx-ingress
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: false
+  tags: [nginx-ingress, k3s-addons]
+
+  tasks:
+    - name: Create ingress-nginx namespace
+      kubernetes.core.k8s:
+        name: ingress-nginx
+        api_version: v1
+        kind: Namespace
+        state: present
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Install nginx-ingress via Helm
+      kubernetes.core.helm:
+        name: ingress-nginx
+        chart_ref: ingress-nginx/ingress-nginx
+        release_namespace: ingress-nginx
+        create_namespace: false
+        set_values:
+          - value: controller.service.type=LoadBalancer
+          - value: controller.service.annotations."metallb\.universe\.tf/address-pool"=default-pool
+          - value: controller.config.use-forwarded-headers=true
+        state: present
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Wait for nginx-ingress LoadBalancer IP
+      kubernetes.core.k8s_info:
+        kind: Service
+        namespace: ingress-nginx
+        name: ingress-nginx-controller
+      register: ingress_svc
+      retries: 30
+      delay: 5
+      until: ingress_svc.resources[0].status.loadBalancer.ingress is defined
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Show nginx-ingress LB IP
+      ansible.builtin.debug:
+        msg: "nginx-ingress LoadBalancer IP: {{ ingress_svc.resources[0].status.loadBalancer.ingress[0].ip }}"
+
+- name: Install cert-manager
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: false
+  tags: [cert-manager, k3s-addons]
+
+  tasks:
+    - name: Create cert-manager namespace
+      kubernetes.core.k8s:
+        name: cert-manager
+        api_version: v1
+        kind: Namespace
+        state: present
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Install cert-manager via Helm
+      kubernetes.core.helm:
+        name: cert-manager
+        chart_ref: jetstack/cert-manager
+        release_namespace: cert-manager
+        create_namespace: false
+        set_values:
+          - value: installCRDs=true
+        state: present
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Wait for cert-manager pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: cert-manager
+        label_selectors:
+          - app = cert-manager
+      register: cm_pods
+      retries: 30
+      delay: 5
+      until: cm_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Create Let's Encrypt staging ClusterIssuer (HTTP01)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-staging
+          spec:
+            acme:
+              server: https://acme-staging-v02.api.letsencrypt.org/directory
+              email: ops@example.lab
+              privateKeySecretRef:
+                name: letsencrypt-staging-key
+              solvers:
+                - http01:
+                    ingress:
+                      class: nginx
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Create Let's Encrypt production ClusterIssuer (HTTP01)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-prod
+          spec:
+            acme:
+              server: https://acme-v02.api.letsencrypt.org/directory
+              email: ops@example.lab
+              privateKeySecretRef:
+                name: letsencrypt-prod-key
+              solvers:
+                - http01:
+                    ingress:
+                      class: nginx
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Configure NFS-backed storage (host bind-mount + local-path-provisioner)
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: false
+  tags: [storage, k3s-addons]
+
+  tasks:
+    - name: Check that NFS bind-mount path exists on worker nodes
+      # The Proxmox host must mount TrueNAS NFS (tank/k8s) at a path that is
+      # bind-mounted into the worker LXCs via Tofu mount_points. The default
+      # local-path-provisioner path (/var/lib/rancher/k3s/storage) is on the
+      # LXC root disk unless configured otherwise.
+      #
+      # For now, configure the default local-path StorageClass with Retain
+      # policy. NFS-backed sharedFileSystemPath can be added after the cluster
+      # is running by editing the local-path-provisioner ConfigMap.
+      ansible.builtin.debug:
+        msg: "Using default local-path-provisioner path (local-lvm initially). See docs/k3s-architecture.md section 7.2 for NFS-backed setup."
+
+    - name: Delete default local-path StorageClass (reclaimPolicy is immutable)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: local-path
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Recreate local-path StorageClass with Retain reclaimPolicy
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: local-path
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "true"
+          provisioner: rancher.io/local-path
+          volumeBindingMode: WaitForFirstConsumer
+          reclaimPolicy: Retain
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Verify StorageClass config
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+      register: sc_list
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Debug StorageClass list
+      ansible.builtin.debug:
+        msg: "{{ sc_list.resources | map(attribute='metadata.name') | list }}"
+
+- name: Install ArgoCD and bootstrap GitOps
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: false
+  tags: [argocd, k3s-addons]
+
+  tasks:
+    - name: Create argocd namespace
+      kubernetes.core.k8s:
+        name: argocd
+        api_version: v1
+        kind: Namespace
+        state: present
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Install ArgoCD via Helm
+      kubernetes.core.helm:
+        name: argocd
+        chart_ref: argo/argo-cd
+        release_namespace: argocd
+        create_namespace: false
+        set_values:
+          - value: configs.params."server\.insecure"=true
+          - value: server.service.type=LoadBalancer
+          # Fixed address, so NPM/Traefik can point at it (was .51 - taken by
+          # the atuin LXC, 2026-10-29).
+          - value: server.service.annotations."metallb\.universe\.tf/loadBalancerIPs"=10.20.30.70
+        state: present
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Wait for ArgoCD server pod
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: argocd
+        label_selectors:
+          - app.kubernetes.io/name = argocd-server
+      register: argocd_pods
+      retries: 30
+      delay: 5
+      until: argocd_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Wait for ArgoCD server LoadBalancer IP
+      kubernetes.core.k8s_info:
+        kind: Service
+        namespace: argocd
+        name: argocd-server
+      register: argocd_svc
+      retries: 30
+      delay: 5
+      until: argocd_svc.resources[0].status.loadBalancer.ingress is defined
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Show ArgoCD details
+      ansible.builtin.debug:
+        msg:
+          - "ArgoCD URL: https://argocd.example.lab"
+          - "ArgoCD LB IP: {{ argocd_svc.resources[0].status.loadBalancer.ingress[0].ip }}"
+          - ""
+          - "NOTE: Create the k8s-cluster repo and root Application after this."
+          - "See docs/k3s-architecture.md section 4 for the app-of-apps pattern."
+
+- name: Summary of installed add-ons
+  hosts: k3s-cp1.example.lab
+  become: false
+  gather_facts: false
+  tags: [summary, k3s-addons]
+
+  tasks:
+    - name: Print add-ons summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ K3s cluster is bootstrapped with add-ons:"
+          - "   - Flannel (built-in, host-gw mode)"
+          - "   - MetalLB (10.20.30.50, 10.20.30.70-10.20.30.79)"
+          - "   - nginx-ingress (LoadBalancer)"
+          - "   - cert-manager (staging + prod ClusterIssuers)"
+          - "   - local-path-provisioner (default StorageClass, Retain policy)"
+          - "   - ArgoCD (LoadBalancer)"
+          - ""
+          - "📋 Next steps:"
+          - "   1. Create the k8s-cluster repo in Gitea"
+          - "   2. Create DNS records for K3s services in AdGuard"
+          - "   3. Bootstrap ArgoCD root app (app-of-apps)"
+          - "   4. Add Homepage entries for K3s services"
+          - ""
+          - "🔧 Useful commands:"
+          - "   kubectl get nodes -o wide    (on k3s-cp1)"
+          - "   kubectl get pods -A          (all pods)"
+          - "   argocd admin initial-password -n argocd  (get ArgoCD password)"

@@ -1,0 +1,124 @@
+{
+  "id": null,
+  "uid": "fleet-logs",
+  "title": "Fleet Logs",
+  "tags": ["homelab", "loki"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "type": "query",
+        "label": "Job",
+        "datasource": { "type": "loki", "uid": "loki-ds" },
+        "query": "label_values(job)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "current": { "text": "app-containers", "value": "app-containers" }
+      },
+      {
+        "name": "host",
+        "type": "query",
+        "label": "Host",
+        "datasource": { "type": "loki", "uid": "loki-ds" },
+        "query": "label_values({job=~\"$job\"}, host)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "container",
+        "type": "query",
+        "label": "Container",
+        "datasource": { "type": "loki", "uid": "loki-ds" },
+        "query": "label_values({job=\"app-containers\", host=~\"$host\"}, container)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Live Logs",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki-ds" },
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki-ds" },
+          "expr": "{job=~\"$job\", host=~\"$host\", container=~\"$container\"}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Log Volume by Container",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki-ds" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki-ds" },
+          "expr": "sum by (container) (count_over_time({job=\"app-containers\", host=~\"$host\"}[$__interval]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Log Volume by Host",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki-ds" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki-ds" },
+          "expr": "sum by (host) (count_over_time({job=~\"$job\"}[$__interval]))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Error/Warn Rate (case-insensitive match, all jobs)",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki-ds" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 25 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki-ds" },
+          "expr": "sum by (host) (count_over_time({job=~\"$job\", host=~\"$host\"} |~ \"(?i)error|fail|exception\" [$__interval]))",
+          "legendFormat": "{{host}}"
+        }
+      ]
+    }
+  ]
+}

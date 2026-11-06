@@ -1,0 +1,71 @@
+---
+# Real incident, 2026-09-04: paperless's HostDiskWillFillSoon alert fired
+# from 4.09GB of dangling image layers (superseded :latest pulls from
+# repeated container recreations that same session) - `docker image
+# prune` only ever runs by hand today, so nothing reclaims this fleet-wide
+# as every :latest-tagged app image gets superseded over time. Same shape
+# as docker_restart_check.yml - a periodic systemd timer, Docker hosts only.
+#
+# Deliberately `docker image prune -f` (dangling only), NOT `-a` - `-a`
+# also removes any image not currently backing a running container, which
+# would nuke a stopped-but-intentionally-kept rollback image (see the PXE/
+# arr-LXC-split precedents in docs/known-issues.md of keeping an old
+# instance stopped-not-destroyed as a rollback window). Dangling-only is
+# always safe: by definition nothing can be running from an untagged,
+# unreferenced image layer.
+- name: Check if docker is present
+  ansible.builtin.command: getent group docker
+  register: _common_docker_group_check
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only; otherwise --check treats every host as a Docker host
+
+- name: Deploy docker_image_prune systemd service (Docker hosts only)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker-image-prune.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by Ansible — do not edit manually
+      # Role: common
+      [Unit]
+      Description=Prune dangling Docker images (superseded :latest pulls)
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/docker image prune -f
+  when: _common_docker_group_check.rc == 0
+  notify: Reload systemd
+
+- name: Deploy docker_image_prune systemd timer (Docker hosts only)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker-image-prune.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by Ansible — do not edit manually
+      # Role: common
+      [Unit]
+      Description=Run docker image prune daily
+
+      [Timer]
+      OnBootSec=10min
+      OnUnitActiveSec=1d
+      AccuracySec=1h
+
+      [Install]
+      WantedBy=timers.target
+  when: _common_docker_group_check.rc == 0
+  notify: Reload systemd
+
+- name: Enable and start docker_image_prune timer (Docker hosts only)
+  ansible.builtin.systemd:
+    name: docker-image-prune.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  # --check can't enable a timer this same run would create; real runs must not fail silently.
+  ignore_errors: "{{ ansible_check_mode }}"
+  when: _common_docker_group_check.rc == 0

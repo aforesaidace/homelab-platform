@@ -1,0 +1,24 @@
+---
+# step_ca_password comes from OpenBao (secret/step-ca) via the step-ca-kv
+# AppRole - its own dedicated KV path, not reused from another app's
+# credential. role_id isn't sensitive; secret_id must come from
+# ANSIBLE_HASHI_VAULT_SECRET_ID, never committed.
+- name: Deploy step-ca (internal PKI/CA)
+  hosts: step-ca.example.lab
+  become: true
+  gather_facts: true
+  vars:
+    ansible_hashi_vault_role_id: "a987a2ec-eadc-3712-f003-a8885a27dbe8"
+    ansible_hashi_vault_auth_method: approle
+    ansible_hashi_vault_addr: "http://10.20.30.22:8200"
+    _step_ca_vault_secret: "{{ lookup('community.hashi_vault.vault_kv2_get', 'step-ca').secret }}"
+    step_ca_password: "{{ _step_ca_vault_secret.step_ca_password }}"
+  roles:
+    - role: common
+      tags: [common]
+    - role: node_exporter
+      tags: [node_exporter]
+    - role: alloy
+      tags: [alloy]
+    - role: step_ca
+      tags: [step_ca]

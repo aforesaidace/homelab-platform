@@ -1,0 +1,53 @@
+---
+- name: Check if loki binary already exists at correct version
+  ansible.builtin.command:
+    cmd: "{{ loki_install_dir }}/loki --version"
+  register: loki_installed_version
+  changed_when: false
+  failed_when: false
+  tags: [install]
+  check_mode: false  # read-only; without this --check always "downloads" then fails
+
+- name: Download Loki binary from GitHub releases
+  ansible.builtin.get_url:
+    url: "https://github.com/grafana/loki/releases/download/v{{ loki_version }}/loki-linux-amd64.zip"
+    dest: "/tmp/loki-linux-amd64.zip"
+    mode: '0644'
+    timeout: 60
+  when: loki_version not in ((loki_installed_version.stdout | default('')) ~ (loki_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Install unzip
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+  tags: [install]
+
+- name: Extract Loki binary
+  ansible.builtin.unarchive:
+    src: /tmp/loki-linux-amd64.zip
+    dest: /tmp
+    remote_src: true
+  when: loki_version not in ((loki_installed_version.stdout | default('')) ~ (loki_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Install loki binary
+  ansible.builtin.copy:
+    src: /tmp/loki-linux-amd64
+    dest: "{{ loki_install_dir }}/loki"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  when: loki_version not in ((loki_installed_version.stdout | default('')) ~ (loki_installed_version.stderr | default('')))
+  notify: Restart loki
+  tags: [install]
+
+- name: Clean up temp files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/loki-linux-amd64.zip
+    - /tmp/loki-linux-amd64
+  tags: [install]

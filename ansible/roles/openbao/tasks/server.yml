@@ -1,0 +1,34 @@
+---
+- name: Ensure OpenBao data directory exists
+  ansible.builtin.file:
+    path: "{{ openbao_data_root }}/data"
+    state: directory
+    mode: "0755"
+    # openbao/openbao image runs as uid=100(openbao) gid=1000(openbao)
+    # internally - bind-mounted host dir needs matching ownership or the
+    # container fails to open its raft storage file (permission denied).
+    owner: "100"
+    group: "1000"
+
+- name: Deploy OpenBao config file
+  ansible.builtin.template:
+    src: config.hcl.j2
+    dest: "{{ openbao_data_root }}/config.hcl"
+    mode: "0644"
+  notify: Restart openbao
+
+- name: Deploy OpenBao container
+  community.docker.docker_container:
+    name: "{{ openbao_container_name }}"
+    image: "{{ openbao_image }}"
+    state: started
+    restart_policy: unless-stopped
+    command: "server -config=/openbao/config.hcl"
+    capabilities:
+      - IPC_LOCK
+    ports:
+      - "{{ openbao_port }}:{{ openbao_port }}"
+      - "{{ openbao_cluster_port }}:{{ openbao_cluster_port }}"
+    volumes:
+      - "{{ openbao_data_root }}/data:/openbao/data"
+      - "{{ openbao_data_root }}/config.hcl:/openbao/config.hcl:ro"

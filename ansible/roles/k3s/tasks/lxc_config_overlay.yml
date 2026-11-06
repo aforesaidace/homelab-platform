@@ -1,0 +1,103 @@
+---
+# ansible/roles/k3s/tasks/lxc_config_overlay.yml
+#
+# Adds required LXC config overlay lines to a single K3s LXC on its Proxmox
+# host. These lines cannot be set via the bpg/proxmox Terraform module because
+# the API does not expose raw LXC config keys.
+#
+# Required lines and why:
+#   lxc.cap.drop:                     — Drop no caps; keep NET_ADMIN for Flannel
+#   lxc.apparmor.profile: unconfined  — Allow mount/pivot_root for kubelet
+#   lxc.mount.auto: proc:rw sys:rw cgroup:rw  — Writable /proc/sys for kubelet
+#   lxc.cgroup2.devices.allow: c 10:200 rwm   — /dev/net/tun for K3s service LB
+#
+# Follows ansible/roles/arr/tasks/tun_device.yml pattern:
+#   delegate_to → Proxmox host as root via proxmox_root_ssh_key
+#   lineinfile  → idempotent config entry
+#   pct reboot  → apply after config change
+#
+# Invoked with loop_items mapping LXC hostname → Proxmox host FQDN.
+# VMID is discovered dynamically from pct list to avoid hardcoding.
+
+- name: "Look up VMID for K3s LXC: {{ lxc_item.hostname }}"
+  ansible.builtin.shell: |
+    set -o pipefail
+    /usr/sbin/pct list | awk -v h="{{ lxc_item.hostname }}" '{
+      for(i=1;i<=NF;i++) if($i == h) print $1
+    }'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ lxc_item.proxmox_host }}"
+  vars:
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ proxmox_root_ssh_key }}"
+  register: vmid_lookup
+  changed_when: false
+  failed_when: vmid_lookup.stdout == ""
+
+- name: "Set VMID fact for {{ lxc_item.hostname }}"
+  ansible.builtin.set_fact:
+    lxc_vmid: "{{ vmid_lookup.stdout | trim }}"
+
+- name: "Ensure lxc.cap.drop: is empty (keep all caps, including NET_ADMIN)"
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ lxc_vmid }}.conf"
+    line: "lxc.cap.drop:"
+    insertafter: "^#Managed by OpenTofu"
+    state: present
+  delegate_to: "{{ lxc_item.proxmox_host }}"
+  vars:
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ proxmox_root_ssh_key }}"
+  register: ln_cap_drop
+
+- name: "Ensure lxc.apparmor.profile: unconfined"
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ lxc_vmid }}.conf"
+    line: "lxc.apparmor.profile: unconfined"
+    insertafter: "^lxc\\.cap\\.drop:"
+    state: present
+  delegate_to: "{{ lxc_item.proxmox_host }}"
+  vars:
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ proxmox_root_ssh_key }}"
+  register: ln_apparmor
+
+- name: "Ensure lxc.mount.auto: proc:rw sys:rw cgroup:rw"
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ lxc_vmid }}.conf"
+    line: "lxc.mount.auto: proc:rw sys:rw cgroup:rw"
+    insertafter: "^lxc\\.apparmor\\.profile:"
+    state: present
+  delegate_to: "{{ lxc_item.proxmox_host }}"
+  vars:
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ proxmox_root_ssh_key }}"
+  register: ln_mount_auto
+
+- name: "Ensure lxc.cgroup2.devices.allow: c 10:200 rwm"
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ lxc_vmid }}.conf"
+    line: "lxc.cgroup2.devices.allow: c 10:200 rwm"
+    insertafter: "^lxc\\.mount\\.auto:"
+    state: present
+  delegate_to: "{{ lxc_item.proxmox_host }}"
+  vars:
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ proxmox_root_ssh_key }}"
+  register: ln_cgroup2
+
+- name: "Reboot LXC if config changed: {{ lxc_item.hostname }}"
+  ansible.builtin.command: "/usr/sbin/pct reboot {{ lxc_vmid }}"
+  delegate_to: "{{ lxc_item.proxmox_host }}"
+  vars:
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ proxmox_root_ssh_key }}"
+  when: ln_cap_drop.changed or ln_apparmor.changed or ln_mount_auto.changed or ln_cgroup2.changed
+  changed_when: true
+
+- name: "Wait for LXC to come back up after reboot: {{ lxc_item.hostname }}"
+  ansible.builtin.wait_for_connection:
+    delay: 15
+    timeout: 120
+  when: ln_cap_drop.changed or ln_apparmor.changed or ln_mount_auto.changed or ln_cgroup2.changed

@@ -1,0 +1,95 @@
+---
+# K3s role — installs K3s on CP and worker nodes.
+# Playbook handles ordering; this just does the mechanical install.
+
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Create K3s config directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+
+- name: Create K3s config.yaml (unprivileged LXC workarounds)
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0644"
+    content: |
+      kubelet-arg:
+        - "feature-gates=KubeletInUserNamespace=true"
+        - "protect-kernel-defaults=false"
+  register: k3s_config
+
+# noqa command-instead-of-module - this is K3s's official install method, a
+# curl-piped installer. get_url cannot pipe to a shell, and splitting it into
+# download-then-execute would diverge from the upstream-supported path for no
+# real gain. pipefail is set below so a failed curl fails the task rather than
+# silently feeding an empty script to sh.
+- name: Install K3s
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -sfL {{ k3s_install_url }} | sh -s - \
+      {{ k3s_node_type }} \
+      {% if k3s_node_type == 'server' %}{{ k3s_server_flags }}{% endif %} \
+      {% if k3s_cp_first %}--cluster-init{% endif %} \
+      {% if k3s_server_url %}--server={{ k3s_server_url }}{% endif %} \
+      {% if k3s_token %}--token={{ k3s_token }}{% endif %} \
+      --node-ip={{ k3s_node_ip }}
+  args:
+    creates: /usr/local/bin/k3s
+    # pipefail above is a bashism; Debian's /bin/sh is dash and would fail on it
+    executable: /bin/bash
+  register: k3s_install_result
+  changed_when: k3s_install_result.rc == 0
+
+- name: Restart K3s if config changed (server, reinstall)
+  when: (k3s_config.changed or k3s_install_result.changed) and k3s_node_type == 'server'
+  ansible.builtin.systemd:
+    name: k3s
+    state: restarted
+    daemon_reload: true
+
+- name: Restart K3s agent if config changed (worker, reinstall)
+  when: (k3s_config.changed or k3s_install_result.changed) and k3s_node_type == 'agent'
+  ansible.builtin.systemd:
+    name: k3s-agent
+    state: restarted
+    daemon_reload: true
+  # Tolerated because k3s-agent may not exist yet on a first run. failed_when
+  # rather than ignore_errors so the task doesn't report as failed.
+  failed_when: false
+
+- name: Wait for K3s service to be running (CP nodes)
+  when: k3s_node_type == 'server'
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+  register: k3s_service
+  retries: 30
+  delay: 10
+  until: k3s_service.status.ActiveState == 'active'
+  changed_when: false
+
+- name: Wait for API server to be reachable (CP nodes)
+  when: k3s_node_type == 'server'
+  ansible.builtin.shell: |
+    /usr/local/bin/kubectl get node {{ ansible_hostname }} -o jsonpath='{.metadata.name}' 2>/dev/null || echo "Unavailable"
+  retries: 30
+  delay: 5
+  register: api_available
+  until: api_available.stdout == ansible_hostname
+  changed_when: false
+
+- name: Get K3s kubeconfig
+  ansible.builtin.fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "~/.kube/config.{{ ansible_hostname }}"
+    flat: true
+  when: k3s_cp_first

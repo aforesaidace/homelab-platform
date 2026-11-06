@@ -1,0 +1,26 @@
+---
+loki_version: "3.0.0"
+loki_port: 3100
+loki_grpc_port: 9096
+loki_user: loki
+loki_group: loki
+loki_uid: 991
+loki_gid: 991
+loki_data_dir: /var/lib/loki
+loki_config_dir: /etc/loki
+loki_install_dir: /usr/local/bin
+loki_retention_period: "744h"
+loki_chunk_idle_period: "1h"
+loki_chunk_retain_period: "30s"
+loki_max_chunk_age: "2h"
+loki_log_level: "info"
+loki_ingestion_rate_mb: 16
+loki_ingestion_burst_size_mb: 32
+loki_max_streams_per_user: 10000
+loki_max_line_size: "256kb"
+# Loki's built-in per-stream limit defaults to 3MB/sec, independent of the
+# overall ingestion_rate_mb above - a single bursty stream (e.g. Promtail
+# catching up on a large historical log file) can hit this even when total
+# ingestion is well under the tenant-wide limit. See Known Issue #63.
+loki_per_stream_rate_limit: "10MB"
+loki_per_stream_rate_limit_burst: "20MB"

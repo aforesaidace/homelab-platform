@@ -1,0 +1,6 @@
+---
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ common_timezone }}"
+  when: inventory_hostname not in groups['proxmox_nodes']
+  tags: [configure]

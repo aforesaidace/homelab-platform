@@ -1,0 +1,8 @@
+// 20auto-upgrades managed by Ansible
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+// Autoclean only drops .debs the repo no longer offers; repos that keep every
+// version (Grafana's, for Alloy) grew 1-5GB caches fleet-wide. Weekly full clean.
+APT::Periodic::CleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";

@@ -1,0 +1,7 @@
+---
+- name: Enable and start alloy service
+  ansible.builtin.systemd:
+    name: "{{ alloy_service_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true

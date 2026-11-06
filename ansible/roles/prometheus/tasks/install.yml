@@ -1,0 +1,77 @@
+---
+- name: Set prometheus archive name
+  ansible.builtin.set_fact:
+    prometheus_archive: "prometheus-{{ prometheus_version }}.linux-amd64"
+  tags: [install]
+
+- name: Check if prometheus binary already exists at correct version
+  ansible.builtin.command:
+    cmd: "{{ prometheus_install_dir }}/prometheus --version"
+  register: prometheus_installed_version
+  check_mode: false  # read-only; without this --check always "downloads" then fails to extract
+  changed_when: false
+  failed_when: false
+  tags: [install]
+
+- name: Download Prometheus archive from GitHub releases
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/{{ prometheus_archive }}.tar.gz"
+    dest: "/tmp/{{ prometheus_archive }}.tar.gz"
+    mode: '0644'
+    timeout: 60
+  when: prometheus_version not in ((prometheus_installed_version.stdout | default('')) ~ (prometheus_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Extract Prometheus archive
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ prometheus_archive }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+  when: prometheus_version not in ((prometheus_installed_version.stdout | default('')) ~ (prometheus_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Install prometheus binary
+  ansible.builtin.copy:
+    src: "/tmp/{{ prometheus_archive }}/prometheus"
+    dest: "{{ prometheus_install_dir }}/prometheus"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  when: prometheus_version not in ((prometheus_installed_version.stdout | default('')) ~ (prometheus_installed_version.stderr | default('')))
+  notify: Restart prometheus
+  tags: [install]
+
+- name: Install promtool binary
+  ansible.builtin.copy:
+    src: "/tmp/{{ prometheus_archive }}/promtool"
+    dest: "{{ prometheus_install_dir }}/promtool"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  when: prometheus_version not in ((prometheus_installed_version.stdout | default('')) ~ (prometheus_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Copy console libraries
+  ansible.builtin.copy:
+    src: "/tmp/{{ prometheus_archive }}/{{ item }}"
+    dest: "{{ prometheus_config_dir }}/{{ item }}"
+    owner: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    mode: '0755'
+    remote_src: true
+  loop:
+    - consoles
+    - console_libraries
+  when: prometheus_version not in ((prometheus_installed_version.stdout | default('')) ~ (prometheus_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Clean up temp archive
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/{{ prometheus_archive }}.tar.gz"
+    - "/tmp/{{ prometheus_archive }}"
+  tags: [install]

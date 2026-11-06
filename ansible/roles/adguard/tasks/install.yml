@@ -1,0 +1,69 @@
+---
+- name: Check if AdGuard Home is already installed
+  stat:
+    path: "{{ adguard_install_dir }}/AdGuardHome"
+  register: adguard_binary
+
+# Pipes straight into the installer's own shell script; downloading via
+# get_url/uri first would need a separate execute step anyway, no real
+# benefit over the vendor's documented method.
+- name: Download and run AdGuard Home install script # noqa: command-instead-of-module
+  shell: |
+    set -o pipefail
+    curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh \
+      | sh -s -- -v
+  args:
+    executable: /bin/bash
+  when: not adguard_binary.stat.exists
+  register: adguard_install
+  changed_when: true
+
+# Deliberately a plain conditional task, not a handler: this needs to run
+# inline, immediately after the install step and before the next task in
+# this same sequence, not deferred to end-of-play.
+- name: Wait for AdGuard Home setup wizard to be available # noqa: no-handler
+  uri:
+    url: "{{ adguard_api_url }}/install/check_config"
+    method: GET
+    status_code: [200, 302, 400, 404]
+  register: wizard_check
+  until: wizard_check.status in [200, 302, 400, 404]
+  retries: 15
+  delay: 5
+  when: adguard_install is changed
+
+# Same reason as above - deliberately not a handler.
+- name: Complete AdGuard Home initial setup via API # noqa: no-handler
+  uri:
+    url: "{{ adguard_api_url }}/install/configure"
+    method: POST
+    body_format: json
+    body:
+      web:
+        ip: "0.0.0.0"
+        port: "{{ adguard_port }}"
+      dns:
+        ip: "0.0.0.0"
+        port: "{{ adguard_dns_port }}"
+      username: "{{ adguard_user }}"
+      password: "{{ adguard_password }}"
+    status_code: [200, 202]
+  when: adguard_install is changed
+  register: adguard_configured
+
+# Same reason as above - deliberately not a handler.
+- name: Wait for AdGuard Home to restart after initial config # noqa: no-handler
+  wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ adguard_port }}"
+    delay: 5
+    timeout: 60
+  when: adguard_configured is changed
+
+- name: Ensure AdGuardHome service is enabled and started
+  systemd:
+    name: AdGuardHome
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: adguard_binary.stat.exists or adguard_install is changed

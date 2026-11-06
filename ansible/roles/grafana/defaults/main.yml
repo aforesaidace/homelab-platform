@@ -1,0 +1,86 @@
+---
+grafana_version: latest
+grafana_port: 3000
+grafana_user: grafana
+grafana_group: grafana
+grafana_data_dir: /var/lib/grafana
+grafana_logs_dir: /var/log/grafana
+grafana_config_dir: /etc/grafana
+grafana_provisioning_dir: /etc/grafana/provisioning
+
+# Server
+grafana_domain: grafana.example.lab
+grafana_root_url: "https://{{ grafana_domain }}"
+grafana_serve_from_sub_path: false
+
+# Security
+grafana_admin_user: admin
+grafana_admin_password: "changeme"
+grafana_secret_key: "override-me"   # real value comes from OpenBao (monitoring.yml)
+grafana_disable_gravatar: true
+grafana_cookie_secure: true
+grafana_cookie_samesite: lax
+grafana_allow_sign_up: false
+grafana_allow_org_create: false
+
+# OIDC via Authentik - RBAC pilot, 2026-08-26 (see docs/todo.md). Real
+# values in ansible/group_vars/secrets.yml, matching this role's existing
+# non-vault-first convention (unlike alertmanager, its newer sibling in
+# monitoring.yml).
+grafana_oauth_client_id: "changeme"
+grafana_oauth_client_secret: "changeme"
+
+# Database (default sqlite)
+grafana_database_type: sqlite3
+grafana_database_path: "{{ grafana_data_dir }}/grafana.db"
+
+# Logging
+grafana_log_mode: console file
+grafana_log_level: info
+
+# Data sources
+grafana_prometheus_url: "http://10.20.30.12:9090"
+grafana_loki_url: "http://10.20.30.13:3100"
+grafana_alertmanager_url: "http://10.20.30.43:9093"
+
+# Dashboards
+grafana_dashboards_dir: /etc/grafana/provisioning/dashboards
+grafana_dashboard_ids:
+  - 1860
+  - 10347
+
+# Files a dashboard used to be provisioned as, deleted so a committed copy
+# with the same uid doesn't collide with the stale download.
+grafana_retired_dashboard_files:
+  - 22934.json
+
+# Custom homelab-authored + curated dashboards - see ansible/roles/grafana/files/.
+# fleet-logs.json is the ONE canonical Loki/logs dashboard (standardized
+# 2026-09-07 - three redundant hand-added logs dashboards were deleted).
+# unifi-udm-pro / docker-monitoring were codified from live Grafana the same
+# day (were UI-imported for snmp_exporter / cAdvisor, never in git).
+grafana_custom_dashboards:
+  - fleet-logs.json
+  - gpu-hosts.json
+  - scraparr.json    # grafana.com 22934 (was in grafana_dashboard_ids; its ${DS_MIMIR} panels never resolved), pinned to prometheus-ds 2026-10-18
+  - unpackerr.json   # grafana.com 18817 (Unpackerr's author), ${DS_PROMETHEUS} -> prometheus-ds, 2026-10-18
+  - unifi-udm-pro.json
+  - docker-monitoring.json
+  - truenas_scale.json
+  - truenas_scale_cgroups.json
+  - truenas_scale_disk_insights.json
+  - truenas_scale_temperatures.json
+  - netalertx.json
+
+# SMTP (optional)
+grafana_smtp_enabled: false
+grafana_smtp_host: ""
+grafana_smtp_user: ""
+grafana_smtp_password: ""
+grafana_smtp_from_address: ""
+grafana_smtp_from_name: "Grafana"
+
+# Analytics
+grafana_reporting_enabled: false
+grafana_check_for_updates: false
+grafana_check_for_plugin_updates: false

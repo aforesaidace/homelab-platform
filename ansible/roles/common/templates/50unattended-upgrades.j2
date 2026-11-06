@@ -1,0 +1,15 @@
+// Managed by Ansible
+// Match on codename, not archive: when Debian 13 became stable, Debian 12's
+// archive turned into "oldstable"/"oldstable-security" and the old
+// Allowed-Origins form ("${distro_id}:${distro_codename}-security" = a=bookworm-security)
+// silently matched nothing - no security updates from ~Aug to 2026-11-01.
+// This is the form Debian's own default config uses.
+Unattended-Upgrade::Origins-Pattern {
+    "origin=Debian,codename=${distro_codename},label=Debian";
+    "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+    "origin=Debian,codename=${distro_codename},label=Debian-Security";
+};
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";

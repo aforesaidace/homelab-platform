@@ -1,0 +1,26 @@
+# Managed by Ansible — do not edit manually
+# Role: alertmanager
+
+[Unit]
+Description=Prometheus Alertmanager
+Documentation=https://prometheus.io/docs/alerting/latest/alertmanager/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ alertmanager_user }}
+Group={{ alertmanager_group }}
+ExecStart={{ alertmanager_install_dir }}/alertmanager \
+  --config.file={{ alertmanager_config_dir }}/alertmanager.yml \
+  --storage.path={{ alertmanager_data_dir }} \
+  --web.listen-address=0.0.0.0:{{ alertmanager_port }} \
+  --log.level={{ alertmanager_log_level }}
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+SendSIGKILL=no
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

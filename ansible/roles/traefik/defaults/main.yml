@@ -1,0 +1,120 @@
+---
+traefik_image: "traefik"
+traefik_image_tag: "v3.7.11"
+traefik_container: traefik
+traefik_data_root: /opt/traefik
+traefik_acme_email: "ops@example.lab"
+
+# Real value lives in OpenBao (secret/cloudflare) via the traefik-kv
+# AppRole - the same credential npm already uses for its own DNS-01
+# renewal, not a Traefik-specific one.
+cloudflare_api_token: "changeme"
+
+# Mirrors scripts/npm_setup.py's PROXY_HOSTS - same domains, same
+# backends. Kept as a separate list here rather than importing that
+# script's data structure directly (Python vs Jinja/YAML) - npm_setup.py
+# stays frozen/untouched until NPM is actually decommissioned (Phase 3),
+# this becomes the new single source of truth going forward.
+traefik_hosts:
+  - domain: "grafana.example.lab"
+    forward_host: "10.20.30.14"
+    forward_port: 3000
+  - domain: "ai.example.lab"
+    forward_host: "10.20.30.10"
+    forward_port: 8080
+  - domain: "uptime.example.lab"
+    forward_host: "10.20.30.15"
+    forward_port: 3001
+  - domain: "amp.example.lab"
+    forward_host: "10.20.20.10"
+    forward_port: 8080
+  - domain: "homepage.example.lab"
+    forward_host: "10.20.30.16"
+    forward_port: 3000
+  - domain: "git.example.lab"
+    forward_host: "10.20.30.17"
+    forward_port: 3000
+  - domain: "sonarr.example.lab"
+    forward_host: "10.20.40.23"
+    forward_port: 8989
+  - domain: "radarr.example.lab"
+    forward_host: "10.20.40.23"
+    forward_port: 7878
+  - domain: "prowlarr.example.lab"
+    forward_host: "10.20.40.23"
+    forward_port: 9696
+  - domain: "lidarr.example.lab"
+    forward_host: "10.20.40.23"
+    forward_port: 8686
+  - domain: "nzbget.example.lab"
+    forward_host: "10.20.40.24"
+    forward_port: 6789
+  - domain: "qbittorrent.example.lab"
+    forward_host: "10.20.40.24"
+    forward_port: 8080
+  - domain: "plex.example.lab"
+    forward_host: "10.20.40.25"
+    forward_port: 32400
+  - domain: "jellyfin.example.lab"
+    forward_host: "10.20.40.25"
+    forward_port: 8096
+  - domain: "tdarr.example.lab"
+    forward_host: "10.20.40.21"
+    forward_port: 8265
+  - domain: "seerr.example.lab"
+    forward_host: "10.20.40.23"
+    forward_port: 5055
+  - domain: "n8n.example.lab"
+    forward_host: "10.20.30.20"
+    forward_port: 5678
+  - domain: "patchmon.example.lab"
+    forward_host: "10.20.30.21"
+    forward_port: 3000
+  - domain: "openbao.example.lab"
+    forward_host: "10.20.30.22"
+    forward_port: 8200
+  - domain: "homeassistant.example.lab"
+    forward_host: "10.20.1.93"
+    forward_port: 8123
+  - domain: "argocd.example.lab"
+    forward_host: "10.20.30.70"  # MetalLB, moved from .51 2026-10-29
+    forward_port: 80
+  - domain: "headscale.example.lab"
+    forward_host: "10.20.30.30"
+    forward_port: 8080
+  - domain: "nextcloud.example.lab"
+    forward_host: "10.20.30.32"
+    forward_port: 80
+  # Actual requires these exact response headers client-side for
+  # SharedArrayBuffer (its WASM SQLite engine) and the Web Crypto API
+  # (E2E encryption) - both need a Secure Context. See
+  # https://actualbudget.org/docs/config/reverse-proxies/ - equivalent
+  # to NPM's per-location advanced_config block, done here as a Traefik
+  # headers middleware attached only to this one router.
+  - domain: "actual.example.lab"
+    forward_host: "10.20.30.35"
+    forward_port: 5006
+    headers_middleware:
+      customResponseHeaders:
+        Cross-Origin-Embedder-Policy: "require-corp"
+        Cross-Origin-Opener-Policy: "same-origin"
+        Origin-Agent-Cluster: "?1"
+  - domain: "paperless.example.lab"
+    forward_host: "10.20.30.34"
+    forward_port: 8000
+  - domain: "dashy.example.lab"
+    forward_host: "10.20.30.40"
+    forward_port: 8081
+  - domain: "authentik.example.lab"
+    forward_host: "10.20.30.38"
+    forward_port: 9000
+  - domain: "termix.example.lab"
+    forward_host: "10.20.30.39"
+    forward_port: 8080
+  - domain: "freshrss.example.lab"
+    forward_host: "10.20.30.45"
+    forward_port: 8080
+  # k3s-worker1-mini is a personal Mac Mini, not fleet-managed - see docs/infrastructure.md
+  - domain: "proxcenter.example.lab"
+    forward_host: "10.20.1.120"
+    forward_port: 3000

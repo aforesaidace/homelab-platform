@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Managed by Ansible — do not edit manually
+# Role: common
+#
+# Added 2026-08-23 after a real incident (see docs/known-issues.md): a
+# container crash-looped sealed with zero Prometheus-side visibility,
+# since InstanceDown only tracks node_exporter/host-level reachability -
+# a container can be crash-looping inside a perfectly healthy host and
+# that rule sees nothing wrong. Writes real restart-count and running-state
+# metrics per container to the textfile collector, independent of
+# whatever's actually broken inside the container.
+set -euo pipefail
+
+command -v docker >/dev/null 2>&1 || exit 0
+
+# Textfile-collector dir — taken from the node_exporter role's own var so
+# this always matches whatever --collector.textfile.directory that host's
+# node_exporter actually serves. Skip silently if the dir doesn't exist
+# (host isn't running the role's node_exporter, e.g. an incomplete setup).
+TEXTFILE_DIR="{{ node_exporter_textfile_dir | default('/var/lib/node_exporter/textfile') }}"
+[ -d "$TEXTFILE_DIR" ] || exit 0
+OUT="${TEXTFILE_DIR}/docker_containers.prom.$$"
+FINAL="${TEXTFILE_DIR}/docker_containers.prom"
+
+{
+    echo "# HELP docker_container_restart_count Number of times this container has been restarted"
+    echo "# TYPE docker_container_restart_count gauge"
+    echo "# HELP docker_container_running Whether the container is currently in a running state (1) or not (0)"
+    echo "# TYPE docker_container_running gauge"
+
+    for name in $(docker ps -a --format '{{ '{{.Names}}' }}'); do
+        restarts=$(docker inspect "$name" --format '{{ '{{.RestartCount}}' }}' 2>/dev/null || echo "")
+        running=$(docker inspect "$name" --format '{{ '{{if .State.Running}}1{{else}}0{{end}}' }}' 2>/dev/null || echo "")
+        [ -n "$restarts" ] && echo "docker_container_restart_count{container=\"$name\"} $restarts"
+        [ -n "$running" ] && echo "docker_container_running{container=\"$name\"} $running"
+    done
+} > "$OUT"
+mv "$OUT" "$FINAL"

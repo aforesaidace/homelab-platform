@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic Nautobot -> Prometheus file_sd sync
+
+[Timer]
+OnCalendar={{ prometheus_nautobot_sd_interval }}
+Persistent=true
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

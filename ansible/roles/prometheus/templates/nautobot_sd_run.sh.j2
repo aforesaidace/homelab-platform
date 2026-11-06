@@ -1,0 +1,25 @@
+#!/bin/bash
+# Managed by Ansible — ansible/roles/prometheus/
+# Every {{ prometheus_nautobot_sd_interval }}: pull the read-only Nautobot
+# token from OpenBao (drift-check-kv AppRole, reused wholesale - see
+# ansible/playbooks/monitoring.yml) and refresh the file_sd targets file
+# (the `node` job) from Nautobot's VMs and seeded devices.
+set -uo pipefail
+
+BAO="{{ prometheus_nautobot_sd_openbao_addr }}"
+ROLE_ID="{{ prometheus_nautobot_sd_role_id }}"
+SECRET_ID="$(cat {{ prometheus_nautobot_sd_dir }}/secret_id)"
+
+VT="$(curl -fsS -m 10 -X POST "$BAO/v1/auth/approle/login" \
+       -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" \
+     | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth"]["client_token"])')"
+[ -z "$VT" ] && { echo "nautobot_sd: OpenBao login failed"; exit 2; }
+
+export NAUTOBOT_API_TOKEN="$(curl -fsS -m 10 -H "X-Vault-Token: $VT" \
+    "$BAO/v1/secret/data/drift-check" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["data"]["nautobot_api_token"])')"
+[ -z "$NAUTOBOT_API_TOKEN" ] && { echo "nautobot_sd: could not read nautobot_api_token"; exit 2; }
+
+export SD_OUTPUT_PATH="{{ prometheus_nautobot_sd_output }}"
+
+python3 {{ prometheus_nautobot_sd_dir }}/nautobot_prometheus_sd.py

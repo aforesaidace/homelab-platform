@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync Prometheus file_sd targets from Nautobot (scripts/nautobot_prometheus_sd.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ prometheus_nautobot_sd_dir }}/run.sh

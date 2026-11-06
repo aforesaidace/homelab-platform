@@ -1,0 +1,16 @@
+---
+- name: Include install tasks
+  ansible.builtin.import_tasks: install.yml
+  tags: [install]
+
+- name: Include user tasks
+  ansible.builtin.import_tasks: user.yml
+  tags: [install, user]
+
+- name: Include configure tasks
+  ansible.builtin.import_tasks: configure.yml
+  tags: [configure]
+
+- name: Include service tasks
+  ansible.builtin.import_tasks: service.yml
+  tags: [service]

@@ -1,0 +1,51 @@
+---
+- name: Ensure Traefik directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ traefik_data_root }}/dynamic"
+    - "{{ traefik_data_root }}/letsencrypt"
+
+- name: Deploy Traefik static config
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ traefik_data_root }}/traefik.yml"
+    mode: "0644"
+  notify: Restart traefik
+
+- name: Deploy Traefik dynamic config (routers/services/middlewares)
+  ansible.builtin.template:
+    src: dynamic.yml.j2
+    dest: "{{ traefik_data_root }}/dynamic/dynamic.yml"
+    mode: "0644"
+  # No restart needed - the file provider (watch: true) picks this up live.
+
+- name: Ensure acme.json exists with correct permissions
+  # Traefik refuses to use this file for ACME storage unless it's 0600 -
+  # and won't create it with the right mode itself if Docker creates an
+  # empty file first via the bind mount.
+  ansible.builtin.file:
+    path: "{{ traefik_data_root }}/letsencrypt/acme.json"
+    state: touch
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Deploy Traefik container
+  community.docker.docker_container:
+    name: "{{ traefik_container }}"
+    image: "{{ traefik_image }}:{{ traefik_image_tag }}"
+    state: started
+    restart_policy: unless-stopped
+    pull: true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "{{ traefik_data_root }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "{{ traefik_data_root }}/dynamic:/etc/traefik/dynamic:ro"
+      - "{{ traefik_data_root }}/letsencrypt:/letsencrypt"
+    env:
+      CF_DNS_API_TOKEN: "{{ cloudflare_api_token }}"

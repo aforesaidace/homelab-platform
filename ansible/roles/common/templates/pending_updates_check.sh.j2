@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Managed by Ansible — do not edit manually
+# Role: common
+#
+# Added 2026-08-24 as the visibility half of the PatchMon-replacement
+# direction (see docs/research.md) - PatchMon's own fleet coverage had
+# silently rotted since 2026-07-27 with no enrollment step folded into
+# the new-VM SOP. This is deliberately just a metrics writer, not a
+# patcher - unattended-upgrades (already deployed fleet-wide via this
+# same role) does the actual patching; this only reports what it sees.
+# Read-only: does NOT run `apt update` itself, relies on the apt cache
+# unattended-upgrades already keeps fresh via its own periodic update.
+set -euo pipefail
+
+command -v apt >/dev/null 2>&1 || exit 0
+
+OUT="/var/lib/node_exporter/textfile/pending_updates.prom.$$"
+FINAL="/var/lib/node_exporter/textfile/pending_updates.prom"
+
+total=$(apt list --upgradable 2>/dev/null | grep -c '^[a-zA-Z0-9]' || true)
+security=$(apt list --upgradable 2>/dev/null | grep -c -- '-security' || true)
+reboot_required=0
+[ -f /var/run/reboot-required ] && reboot_required=1
+
+{
+    echo "# HELP node_pending_updates_total Number of packages with an available upgrade"
+    echo "# TYPE node_pending_updates_total gauge"
+    echo "node_pending_updates_total ${total}"
+    echo "# HELP node_pending_security_updates_total Number of packages with an available upgrade from a -security suite"
+    echo "# TYPE node_pending_security_updates_total gauge"
+    echo "node_pending_security_updates_total ${security}"
+    echo "# HELP node_reboot_required Whether the host has a pending reboot for an already-applied update (1) or not (0)"
+    echo "# TYPE node_reboot_required gauge"
+    echo "node_reboot_required ${reboot_required}"
+} > "$OUT"
+mv "$OUT" "$FINAL"

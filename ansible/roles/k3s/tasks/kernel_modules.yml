@@ -1,0 +1,68 @@
+---
+# ansible/roles/k3s/tasks/kernel_modules.yml
+#
+# Ensures required kernel modules are loaded and persisted on both Proxmox
+# hosts for K3s cluster operation. These modules cannot be loaded from inside
+# unprivileged LXCs — they must be present on the host.
+#
+# Required modules:
+#   ip_tables, ip6_tables          — Core iptables (K3s networking)
+#   iptable_nat, iptable_filter    — NAT and filtering rules
+#   xt_conntrack, nf_conntrack     — Connection tracking
+#   nf_nat                          — NAT helpers
+#   xt_set, ip_set                 — IP set support (kube-router NetworkPolicy)
+#   vxlan                          — VXLAN overlay (Flannel fallback)
+#   overlay                        — Overlay filesystem (container images)
+#   br_netfilter                   — Bridge netfilter (K8s networking)
+#   ip_vs                          — IPVS (kube-proxy mode, kube-router)
+#
+# Applied to: proxmox_nodes group (pve1 and pve2 hosts)
+
+- name: "Ensure required kernel modules are loaded ({{ item }})"
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - ip_tables
+    - ip6_tables
+    - iptable_nat
+    - iptable_filter
+    - xt_conntrack
+    - nf_conntrack
+    - nf_nat
+    - xt_set
+    - ip_set
+    - vxlan
+    - overlay
+    - br_netfilter
+    - ip_vs
+  register: modprobe_result
+
+- name: "Ensure kernel modules are persisted across reboots"
+  ansible.builtin.lineinfile:
+    path: /etc/modules-load.d/k3s.conf
+    line: "{{ item }}"
+    create: true
+    mode: "0644"
+    state: present
+  loop:
+    - ip_tables
+    - ip6_tables
+    - iptable_nat
+    - iptable_filter
+    - xt_conntrack
+    - nf_conntrack
+    - nf_nat
+    - xt_set
+    - ip_set
+    - vxlan
+    - overlay
+    - br_netfilter
+    - ip_vs
+
+- name: "Enable IPv4 forwarding on the host"
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    reload: true

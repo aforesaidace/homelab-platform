@@ -1,0 +1,38 @@
+---
+alertmanager_version: "0.34.0"
+alertmanager_port: 9093
+alertmanager_user: alertmanager
+alertmanager_group: alertmanager
+alertmanager_uid: 989
+alertmanager_gid: 989
+alertmanager_data_dir: /var/lib/alertmanager
+alertmanager_config_dir: /etc/alertmanager
+alertmanager_install_dir: /usr/local/bin
+alertmanager_log_level: "info"
+
+# Alerts route to the same Discord channel fleet_monitor/Diun already
+# post to, so this doesn't fragment where the user has to look. This is
+# a real Incoming Webhook URL (channel Integrations -> Webhooks), a
+# different credential type than the bot token those use - discord_configs
+# needs webhook_url specifically, not a bot token.
+alertmanager_discord_webhook_url: ""
+alertmanager_discord_webhook_username: "Alertmanager"
+
+alertmanager_group_wait: "30s"
+alertmanager_group_interval: "5m"
+alertmanager_repeat_interval: "4h"
+
+# Phone push for critical alerts: Alertmanager -> Home Assistant webhook
+# automation (roles/homeassistant automations.yaml,
+# homelab_alertmanager_phone_push) -> Companion app on both Pixels. Empty =
+# Discord only. The URL embeds the webhook id (a secret) - set from
+# OpenBao secret/alertmanager ha_webhook_id in playbooks/monitoring.yml.
+alertmanager_ha_webhook_url: ""
+alertmanager_ha_push_group_wait: "10m"
+
+# Critical-alert push via the local ntfy (roles/ntfy, same host): topic
+# homelab-critical, built-in `alertmanager` template, publisher user. Empty
+# password = no ntfy receiver. Same 10m flush as the HA path.
+alertmanager_ntfy_url: "http://127.0.0.1:8090/homelab-critical?template=alertmanager"
+alertmanager_ntfy_user: "publisher"
+alertmanager_ntfy_password: ""

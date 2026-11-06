@@ -1,0 +1,8 @@
+---
+- name: Install Docker
+  ansible.builtin.include_tasks: docker.yml
+  tags: [docker]
+
+- name: Deploy OpenBao server
+  ansible.builtin.include_tasks: server.yml
+  tags: [server]

@@ -1,0 +1,117 @@
+---
+# K3s cluster bootstrap playbook
+#
+# Ordering:
+#   0. LXC config overlay on Proxmox hosts (cap.drop, apparmor, mount.auto, cgroup2)
+#   1. Kernel modules on Proxmox hosts (ip_tables, br_netfilter, vxlan, etc.)
+#   2. First CP (k3s-cp1) — cluster-init, generates token
+#   3. Fetch token from k3s-cp1 and set fact for remaining hosts
+#   4. Remaining CPs (k3s-cp2, k3s-cp3) — join via server URL
+#   5. Workers (k3s-worker1, k3s-worker2, k3s-gpu1) — join via server URL
+#
+# Usage:
+#   ansible-playbook -i ansible/inventory.yml ansible/playbooks/k3s.yml
+#
+# Note: Play 0 applies overlay to all K3s LXCs BEFORE K3s install. This
+# delegates to Proxmox hosts as root via proxmox_root_ssh_key (same pattern
+# as ansible/roles/arr/tasks/tun_device.yml).
+
+- name: "Apply LXC config overlay to K3s LXCs on their Proxmox hosts"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [k3s, lxc_config]
+
+  vars:
+    k3s_lxc_overlay:
+      - { hostname: k3s-cp1, proxmox_host: pve1.example.lab }
+      - { hostname: k3s-cp2, proxmox_host: pve2.example.lab }
+      - { hostname: k3s-cp3, proxmox_host: pve2.example.lab }
+      - { hostname: k3s-worker1, proxmox_host: pve1.example.lab }
+      - { hostname: k3s-worker2, proxmox_host: pve2.example.lab }
+      - { hostname: k3s-gpu1, proxmox_host: pve1.example.lab }
+
+  tasks:
+    - name: "Apply overlay for each K3s LXC"
+      ansible.builtin.include_tasks: ../roles/k3s/tasks/lxc_config_overlay.yml
+      loop: "{{ k3s_lxc_overlay }}"
+      loop_control:
+        loop_var: lxc_item
+
+- name: "Ensure required kernel modules on both Proxmox hosts"
+  hosts: proxmox_nodes
+  become: true
+  vars:
+    ansible_become: true
+  gather_facts: false
+  tags: [k3s, kernel_modules]
+  tasks:
+    - name: "Load and persist kernel modules"
+      ansible.builtin.include_tasks: ../roles/k3s/tasks/kernel_modules.yml
+
+- name: Bootstrap first control plane node
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: true
+  roles:
+    - role: k3s
+      k3s_node_type: server
+      k3s_cp_first: true
+      k3s_node_ip: "10.20.30.24"
+  tags: [k3s, bootstrap]
+
+- name: Fetch cluster token and kubeconfig
+  hosts: k3s-cp1.example.lab
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read node token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: token_file
+
+    - name: Set token fact
+      ansible.builtin.set_fact:
+        k3s_cluster_token: "{{ token_file['content'] | b64decode | trim }}"
+        k3s_server_url: "https://10.20.30.24:6443"
+      # noqa run-once[task] - this play does not use `strategy: free`, which is
+      # the only case the rule warns about. The fact only needs setting once.
+      run_once: true
+
+    - name: Fetch kubeconfig for local use
+      ansible.builtin.fetch:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: "~/.kube/config.k3s"
+        flat: true
+
+    - name: Debug token (first 10 chars only)
+      ansible.builtin.debug:
+        msg: "Token starts with: {{ k3s_cluster_token[:10] }}..."
+      # noqa run-once[task] - see above; debug output wanted once, not per host.
+      run_once: true
+  tags: [k3s, token]
+
+- name: Install remaining control plane nodes
+  hosts: k3s-cp2.example.lab,k3s-cp3.example.lab
+  become: true
+  gather_facts: true
+  roles:
+    - role: k3s
+      k3s_node_type: server
+      k3s_cp_first: false
+      k3s_server_url: "https://10.20.30.24:6443"
+      k3s_token: "{{ hostvars['k3s-cp1.example.lab']['k3s_cluster_token'] }}"
+      k3s_node_ip: "{{ '10.20.30.25' if inventory_hostname.startswith('k3s-cp2') else '10.20.30.26' }}"
+  tags: [k3s, cp]
+
+- name: Install worker nodes
+  hosts: k3s-worker1.example.lab,k3s-worker2.example.lab,k3s-gpu1.example.lab
+  become: true
+  gather_facts: true
+  roles:
+    - role: k3s
+      k3s_node_type: agent
+      k3s_server_url: "https://10.20.30.24:6443"
+      k3s_token: "{{ hostvars['k3s-cp1.example.lab']['k3s_cluster_token'] }}"
+      k3s_node_ip: "{{ '10.20.30.27' if inventory_hostname.startswith('k3s-worker1') else '10.20.30.28' if inventory_hostname.startswith('k3s-worker2') else '10.20.30.29' }}"
+  tags: [k3s, workers]

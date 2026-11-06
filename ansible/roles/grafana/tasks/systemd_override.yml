@@ -1,0 +1,21 @@
+---
+- name: Create grafana-server systemd override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/grafana-server.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags: [configure, service]
+
+- name: Deploy grafana-server systemd override config
+  ansible.builtin.template:
+    src: grafana-server-override.conf.j2
+    dest: /etc/systemd/system/grafana-server.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart grafana
+  tags: [configure, service]

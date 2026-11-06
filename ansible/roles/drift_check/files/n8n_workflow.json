@@ -1,0 +1,57 @@
+{
+  "name": "Doc Drift Check",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Drift Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "drift-check",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "format",
+      "name": "Format Findings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "parameters": {
+        "jsCode": "const b = $json.body || {};\nif (!b.drift_found && !(b.check_errors && b.check_errors.length)) {\n  return [];\n}\nconst lines = [':mag: **Doc drift detected** (`scripts/drift_check.py`)'];\nfor (const [check, items] of Object.entries(b.findings || {})) {\n  lines.push(`\\n__${check}__ (${items.length}):`);\n  for (const it of items) lines.push(`\\u2022 ${it.detail}`);\n}\nfor (const e of b.check_errors || []) {\n  lines.push(`\\n:warning: check **${e.check}** errored: ${e.error}`);\n}\nconst body = (b.findings ? Object.values(b.findings).flat().map(i => '- ' + i.detail).join('\\n') : '');\nconst issueUrl = 'https://git.example.lab/ops/homelab/issues/new?title='\n  + encodeURIComponent('doc drift: ' + (new Date().toISOString().slice(0,10)))\n  + '&body=' + encodeURIComponent('`scripts/drift_check.py` findings:\\n\\n' + body);\nlines.push(`\\n[open a tracking issue](${issueUrl})`);\nlet content = lines.join('\\n');\nif (content.length > 1900) content = content.slice(0, 1890) + '\\n\\u2026(truncated)';\nreturn [{ json: { content } }];"
+      }
+    },
+    {
+      "id": "discord",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/v10/channels/1192595477829517422/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "content", "value": "={{ $json.content }}" }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "MxswagksUh0IWAtx", "name": "Discord Bot Auth" }
+      }
+    }
+  ],
+  "connections": {
+    "Drift Webhook": { "main": [[{ "node": "Format Findings", "type": "main", "index": 0 }]] },
+    "Format Findings": { "main": [[{ "node": "Post to Discord", "type": "main", "index": 0 }]] }
+  }
+}

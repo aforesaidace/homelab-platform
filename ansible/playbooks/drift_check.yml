@@ -1,0 +1,29 @@
+---
+# Weekly doc-vs-infra reconciliation. Runs on the n8n LXC (already has a repo
+# checkout at /opt/ansible-runner/homelab and the same systemd-timer pattern
+# as fleet_monitor).
+#
+# Vault-first, same as fleet_monitor: credentials come from OpenBao via the
+# drift-check-kv AppRole (scripts/openbao_setup_policies.py), which grants
+# read-only on secret/proxmox (proxmox2netbox_* - the existing PVEAuditor
+# token, reused not re-minted) and secret/homepage (homepage_npm_email/
+# password - the real NPM admin login). role_id isn't sensitive and is baked
+# into run.sh at deploy time; secret_id (drift-check_secret_id, hyphenated
+# key from .vault_secret_ids.yml) is deployed as its own 0600 file and must
+# come from that gitignored file, never committed.
+#
+# The n8n "Doc Drift Check" workflow (webhook /webhook/drift-check) turns a
+# drift report into a Discord message; its JSON lives in
+# ansible/roles/drift_check/files/n8n_workflow.json for reference.
+- name: Deploy the doc-drift reconciliation timer
+  hosts: n8n.example.lab
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../.vault_secret_ids.yml
+  vars:
+    drift_check_role_id: "{{ vars['drift-check_role_id'] }}"
+    drift_check_secret_id: "{{ vars['drift-check_secret_id'] }}"
+  roles:
+    - role: drift_check
+      tags: [drift_check]

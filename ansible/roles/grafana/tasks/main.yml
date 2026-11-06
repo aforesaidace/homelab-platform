@@ -1,0 +1,33 @@
+---
+- name: Include install tasks
+  ansible.builtin.import_tasks: install.yml
+  tags: [install]
+
+- name: Include directory tasks
+  ansible.builtin.import_tasks: directories.yml
+  tags: [install, configure]
+
+- name: Include configure tasks
+  ansible.builtin.import_tasks: configure.yml
+  tags: [configure]
+
+- name: Include datasource provisioning tasks
+  ansible.builtin.import_tasks: datasources.yml
+  tags: [configure, datasources]
+
+- name: Include dashboard provisioning tasks
+  ansible.builtin.import_tasks: dashboards.yml
+  tags: [configure, dashboards]
+
+- name: Include systemd override tasks
+  ansible.builtin.import_tasks: systemd_override.yml
+  tags: [configure, service]
+
+- name: Include service tasks
+  ansible.builtin.import_tasks: service.yml
+  tags: [service]
+
+# Opt-in only - see reset_password.yml's own header comment.
+- name: Reset Grafana admin password (run with --tags password_reset)
+  ansible.builtin.import_tasks: reset_password.yml
+  tags: [password_reset, never]

@@ -1,0 +1,33 @@
+---
+- name: Create Grafana data directory
+  ansible.builtin.file:
+    path: "{{ grafana_data_dir }}"
+    state: directory
+    owner: "{{ grafana_user }}"
+    group: "{{ grafana_group }}"
+    mode: '0750'
+  tags: [configure]
+
+- name: Create Grafana logs directory
+  ansible.builtin.file:
+    path: "{{ grafana_logs_dir }}"
+    state: directory
+    owner: "{{ grafana_user }}"
+    group: "{{ grafana_group }}"
+    mode: '0750'
+  tags: [configure]
+
+- name: Create Grafana provisioning subdirectories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ grafana_user }}"
+    group: "{{ grafana_group }}"
+    mode: '0750'
+  loop:
+    - "{{ grafana_provisioning_dir }}/datasources"
+    - "{{ grafana_provisioning_dir }}/dashboards"
+    - "{{ grafana_provisioning_dir }}/alerting"
+    - "{{ grafana_provisioning_dir }}/plugins"
+    - "{{ grafana_dashboards_dir }}/files"
+  tags: [configure]

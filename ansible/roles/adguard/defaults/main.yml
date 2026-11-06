@@ -1,0 +1,6 @@
+---
+adguard_install_dir: /opt/AdGuardHome
+adguard_port: 3000
+adguard_dns_port: 53
+adguard_host: "0.0.0.0"
+adguard_api_url: "http://{{ ansible_host }}:80"   # per instance (primary + secondary)

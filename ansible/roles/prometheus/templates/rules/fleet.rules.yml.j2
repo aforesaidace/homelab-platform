@@ -1,0 +1,278 @@
+#jinja2: trim_blocks: False
+# Managed by Ansible — do not edit manually
+# Role: prometheus
+#
+# Phase 1 of real alerting (2026-08-21, see docs/known-issues.md #104 and
+# docs/todo.md) - built after NZBGet sat paused 19h unnoticed the same
+# night. Uses only data already scraped (node_exporter, fleet-wide) - no
+# new exporters needed for this first pass. Phase 2 (NZBGet/arr-suite/
+# PatchMon business-logic checks via node_exporter's textfile collector,
+# already enabled fleet-wide) is flagged in docs/todo.md, not built yet.
+
+groups:
+  - name: fleet_availability
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          # Rewritten 2026-11-03 (user: "include more information instead of
+          # being vague"): name, IP, role, what to check, how to silence it.
+          # Replaces the UI-made Grafana "Host Down" rule, whose classic
+          # condition dropped the labels and posted "[no value]".
+          summary: {% raw %}"{{ $labels.instance }}{{ with $labels.ip }} ({{ . }}){{ end }}{{ with $labels.role }}, role {{ . }}{{ end }}: unreachable for 5+ minutes (Prometheus job {{ $labels.job }})"{% endraw %}
+
+          description: {% raw %}"{{ if eq $labels.job \"node\" }}Either the host is down or stopped, or node_exporter on :9100 died. Check: does it answer ping; is it running in Proxmox (pve1/pve2); `systemctl status prometheus-node-exporter` on it. Off on purpose? Set node_exporter=false on it in Nautobot (devices: scripts/nautobot_seed/seed.yml) and this stops.{{ else }}The {{ $labels.job }} endpoint {{ $labels.instance }} is not answering scrapes; check that service on its host.{{ end }}"{% endraw %}
+
+  # Nightly home-folder backups of personal machines (roles/home_backup,
+  # 2026-10-30): metrics from the backup job via node_exporter's textfile dir.
+  - name: home_backups
+    rules:
+      - alert: HomeBackupFailed
+        expr: home_backup_last_run_success == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"{{ $labels.instance }}: last nightly home backup failed (journalctl --user -u home-backup)"{% endraw %}
+      - alert: HomeBackupStale
+        expr: time() - home_backup_last_success_timestamp_seconds > 36 * 3600
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"{{ $labels.instance }}: no successful home backup for {{ $value | humanizeDuration }}"{% endraw %}
+
+  - name: fleet_resources
+    rules:
+      - alert: HostLowMemory
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"{{ $labels.instance }} has less than 15% memory available ({{ printf \"%.1f\" $value }}%)"{% endraw %}
+
+      - alert: HostDiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"}) * 100 < 10
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: {% raw %}"{{ $labels.instance }}'s root filesystem is above 90% full ({{ printf \"%.1f\" $value }}% free)"{% endraw %}
+
+      # Predictive, not threshold-based - warns before HostDiskSpaceCritical
+      # ever fires, based on the actual fill rate rather than a fixed
+      # percentage. Added 2026-08-21 after HostDiskSpaceCritical's very
+      # first real run found ollama-m40/uptime-kuma already critical with
+      # zero advance warning - this is the "catch it earlier" half of that
+      # finding. 6h trailing window (long enough to smooth out a single
+      # noisy hour, short enough to react to real sustained growth,
+      # e.g. Ollama pulling a large new model) projected 24h forward.
+      - alert: HostDiskWillFillSoon
+        expr: >-
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"}[6h], 24*3600) < 0
+          and node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} > 0.10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"{{ $labels.instance }}'s root filesystem is on pace to fill within 24h at its current growth rate"{% endraw %}
+
+      # The `node` job's targets come only from Nautobot (2026-10-24). If the
+      # sync stops (Nautobot/OpenBao down, refused a >20% target drop, timer
+      # dead), Prometheus keeps the last file - hosts added or re-IP'd in
+      # Nautobot after that are silently unmonitored. 30m = 6 missed runs.
+      - alert: NautobotSdStale
+        expr: time() - max(nautobot_sd_last_success_timestamp_seconds) > 1800 or absent(nautobot_sd_last_success_timestamp_seconds)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus's node targets haven't synced from Nautobot for 30+ minutes - check `journalctl -u nautobot-sd` on prometheus"
+
+  - name: fleet_containers
+    rules:
+      # Added 2026-08-23 after a real incident (see docs/known-issues.md):
+      # OpenBao crash-looped sealed for an unknown window with zero
+      # alerting - InstanceDown only tracks node_exporter/host-level
+      # reachability, so a container crash-looping inside a perfectly
+      # healthy host is invisible to it. Uses increase() over a real time
+      # window, not an absolute restart-count threshold, since a
+      # container's cumulative RestartCount can be legitimately nonzero
+      # from a one-off restart months ago - what actually signals trouble
+      # is *repeated* restarts in a short window. Fed by
+      # ansible/roles/common/tasks/docker_restart_check.yml's textfile
+      # collector, rolled out fleet-wide 2026-09-04 (every Docker host;
+      # self-guards on `getent group docker`).
+      - alert: ContainerCrashLooping
+        expr: increase(docker_container_restart_count[15m]) >= 3
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: {% raw %}"{{ $labels.container }} on {{ $labels.instance }} has restarted 3+ times in the last 15 minutes"{% endraw %}
+
+  - name: fleet_synthetic
+    rules:
+      # Added 2026-08-23 after NPM's entire reverse-proxy config went
+      # silently empty for ~19 hours (see docs/known-issues.md #111) -
+      # InstanceDown/up==0 gave zero warning since NPM's own container
+      # never went down, it just served a broken config. This probes the
+      # actual HTTPS response through NPM for a real sample of proxied
+      # domains, via blackbox_exporter's http_2xx module - catches this
+      # exact failure mode directly instead of waiting for an unrelated
+      # downstream app's own check to notice first.
+      - alert: ReverseProxyProbeFailing
+        expr: probe_success{job="blackbox_http"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: {% raw %}"HTTPS probe through NPM is failing for {{ $labels.instance }} - reverse proxy may be broken even though its own container is still running"{% endraw %}
+
+  - name: fleet_proxmox
+    rules:
+      # Added 2026-09-01 after PBS backup storage sat 'inactive' (401 -
+      # a stale root@pam password on pve1/pve2, unrelated to PBS itself
+      # being fine) for 2+ days with every single vzdump job failing and
+      # zero alerting anywhere - only found because the user spotted it
+      # by hand in ProxCenter. pve_up covers node/VM/CT/storage status
+      # (see ansible/roles/pve_exporter/) - this specifically targets
+      # storage since that's the failure mode that actually happened and
+      # is the one with no other coverage (InstanceDown only tracks
+      # node_exporter-reachability, not Proxmox's own view of a storage
+      # backend). id label format is "storage/<node>/<storage-name>",
+      # confirmed from the exporter's own source
+      # (prometheus-pve-exporter's collector/cluster.py StatusCollector).
+      - alert: PVEStorageInactive
+        expr: pve_up{id=~"storage/.+"} == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: {% raw %}"Proxmox storage {{ $labels.id }} on {{ $labels.instance }} is inactive - backups/VM storage using it will fail"{% endraw %}
+
+  - name: fleet_disks
+    rules:
+      # Added 2026-10-20 (ProxMenux review): the Proxmox hosts already run
+      # prometheus-node-exporter-collectors, so smartmon.prom (SATA) and
+      # nvme.prom (NVMe) exist on pve1 and pve2, but nothing alerted on
+      # them. A dying disk was only visible by looking.
+      - alert: DiskSmartUnhealthy
+        # Virtual disks (amp, ollama) report smart_available 0 and healthy 0;
+        # only judge drives that can actually answer.
+        expr: smartmon_device_smart_healthy == 0 and on(instance, disk) smartmon_device_smart_available == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: {% raw %}"SMART overall-health FAILED for {{ $labels.disk }} on {{ $labels.instance }} - replace the drive"{% endraw %}
+
+      - alert: DiskSectorErrors
+        expr: >-
+          smartmon_current_pending_sector_raw_value > 0
+          or smartmon_offline_uncorrectable_raw_value > 0
+          or smartmon_reported_uncorrect_raw_value > 0
+          or smartmon_reallocated_sector_ct_raw_value > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"{{ $labels.disk }} on {{ $labels.instance }} is reporting bad/pending sectors - check smartctl -a and back up"{% endraw %}
+
+      - alert: NvmeCriticalWarning
+        expr: nvme_critical_warning > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: {% raw %}"NVMe {{ $labels.device }} on {{ $labels.instance }} has a critical warning set (spare, temperature, reliability or read-only)"{% endraw %}
+
+      - alert: NvmeWearHigh
+        expr: nvme_percentage_used_ratio > 0.8
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"NVMe {{ $labels.device }} on {{ $labels.instance }} is over 80% of its rated endurance"{% endraw %}
+
+      - alert: NvmeMediaErrors
+        expr: increase(nvme_media_errors_total[1d]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"NVMe {{ $labels.device }} on {{ $labels.instance }} logged new media/data-integrity errors in the last day"{% endraw %}
+
+  - name: fleet_arr_stack
+    rules:
+      # Phase 2 of the fleet_synthetic header's own note - the first real
+      # business-logic check via a textfile collector, added 2026-08-25
+      # after NZBGet sat fully paused for ~29 hours with zero alerting or
+      # logged reason (Known Issue #115), only found by accident. This
+      # only detects a recurrence, it doesn't explain or prevent one -
+      # #115's root cause was never identified. `for: 30m` deliberately
+      # long enough that a brief, deliberate manual pause doesn't page
+      # Discord, short enough to catch real drift the same evening rather
+      # than the next day. Fed by
+      # ansible/roles/arr_downloaders/tasks/nzbget_pause_check.yml.
+      - alert: NZBGetPaused
+        expr: nzbget_server_paused == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"NZBGet on {{ $labels.instance }} has been fully paused for 30+ minutes"{% endraw %}
+
+      # Added 2026-10-18 with Unpackerr. `failed` counts items that used up
+      # their retries (5m apart, max 2), so it stays up until the download
+      # leaves the arr queue - usually a corrupt or passworded RAR.
+      - alert: UnpackerrExtractionFailed
+        expr: unpackerr_gauges{name="failed"} > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"Unpackerr on {{ $labels.instance }} has {{ $value }} failed extraction(s) - check its logs in Grafana/Loki"{% endraw %}
+      # Can't read the Sonarr/Radarr/Lidarr queue (app down or API key
+      # rotated in secret/arr without re-running arr_downloaders.yml).
+      - alert: UnpackerrQueueFetchErrors
+        expr: increase(unpackerr_app_queue_fetch_errors_total[30m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"Unpackerr can't fetch the {{ $labels.app }} queue"{% endraw %}
+
+  - name: fleet_game_servers
+    rules:
+      # Added 2026-10-10. Icarus hung for 4 days in Sept 2026 while AMP
+      # still said Running: Yes; log staleness can't tell hung from empty.
+      # The A2S query is answered by the game process itself. Only fires
+      # when AMP thinks the instance is running, so a deliberate stop
+      # doesn't page. `for: 15m` covers boot and AMP's Steam-update
+      # restarts. Fed by ansible/roles/amp/tasks/game_probe.yml.
+      - alert: AmpGameServerHung
+        # max by(): from when every host was scraped by two jobs (until
+        # 2026-10-24); harmless with one, kept as a guard.
+        expr: >-
+          max by (instance, amp_instance, game) (amp_game_query_up) == 0
+          and on (instance, amp_instance, game)
+          max by (instance, amp_instance, game) (amp_instance_running) == 1
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: {% raw %}"{{ $labels.game }} ({{ $labels.amp_instance }}) on AMP is 'running' but has not answered a Steam server query for 15+ minutes - likely hung. Fix: ssh to amp, `sudo -u amp ampinstmgr -r {{ $labels.amp_instance }}`"{% endraw %}
+
+      # The probe itself stopped (timer dead, script erroring) - without
+      # this, AmpGameServerHung would just go quiet.
+      - alert: AmpGameProbeStale
+        expr: time() - max by (instance) (amp_game_probe_last_run_timestamp_seconds) > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: {% raw %}"The AMP game-server probe on {{ $labels.instance }} hasn't run for 10+ minutes - game-server hang alerts are blind"{% endraw %}

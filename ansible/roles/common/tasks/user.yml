@@ -1,0 +1,51 @@
+---
+# The fleet automation account (user, 2026-10-20: "any kind of automation
+# should use ansible"). Same name, key and passwordless sudo on every managed
+# host, instead of root on LXCs / ops on VMs / ops on media-pi. This only
+# CREATES the account; inventory still connects as before until a host group
+# is switched over (group_vars/lxc.yml, group_vars/vms.yml), and root's SSH
+# access is removed last, once the account is proven on that group.
+- name: Install sudo
+  ansible.builtin.apt:
+    name: sudo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_facts['os_family'] == 'Debian'
+  tags: [install]
+
+# freeipa is Rocky 9 (dnf), the one non-Debian host the account reaches.
+- name: Install sudo (non-Debian)
+  ansible.builtin.package:
+    name: sudo
+    state: present
+  when: ansible_facts['os_family'] != 'Debian'
+  tags: [install]
+
+- name: Create the automation account
+  ansible.builtin.user:
+    name: "{{ common_automation_user }}"
+    comment: Ansible automation
+    shell: /bin/bash
+    create_home: true
+    password_lock: true
+
+- name: Authorize the fleet automation key
+  ansible.posix.authorized_key:
+    user: "{{ common_automation_user }}"
+    key: "{{ lookup('ansible.builtin.file', common_automation_pubkey_file, errors='ignore') | default('', true) | trim }}"
+    state: present
+  when: lookup('ansible.builtin.file', common_automation_pubkey_file, errors='ignore') | default('', true) | trim | length > 0
+  # In --check the account doesn't exist yet, which authorized_key can't dry-run.
+  ignore_errors: "{{ ansible_check_mode }}"
+
+# Hosts with only ops/ops sudo today keep it; this account gets its own
+# file so it can be removed cleanly. visudo validates before it lands.
+- name: Allow passwordless sudo for the automation account
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/90-{{ common_automation_user }}"
+    content: "{{ common_automation_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s

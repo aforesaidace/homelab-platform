@@ -1,0 +1,90 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: inventory_hostname not in groups['proxmox_nodes']
+  tags: [install]
+
+- name: Install common packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - git
+      - vim
+      - htop
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - net-tools
+      - unzip
+      - apt-transport-https
+      - software-properties-common
+      - python3
+      - python3-pip
+      - sudo
+    state: present
+  when: inventory_hostname not in groups['proxmox_nodes']
+  tags: [install]
+
+- name: Ensure sudoers.d directory exists
+  ansible.builtin.file:
+    path: /etc/sudoers.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: inventory_hostname not in groups['proxmox_nodes']
+  tags: [configure]
+
+- name: Configure passwordless sudo for ops user
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/ops
+    content: "{{ common_ops_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    owner: root
+    group: root
+    mode: '0440'
+    validate: '/usr/sbin/visudo -cf %s'
+  when: inventory_hostname not in groups['proxmox_nodes']
+  tags: [configure]
+
+- name: Install sudo on VMs
+  apt:
+    name: sudo
+    state: present
+  when: inventory_hostname in groups["vms"]
+
+- name: Configure passwordless sudo for ops
+  lineinfile:
+    path: /etc/sudoers.d/ops
+    line: "ops ALL=(ALL) NOPASSWD:ALL"
+    create: yes
+    mode: "0440"
+  when: inventory_hostname in groups["vms"]
+
+# apt ships `Binary::apt::DPkg::Lock::Timeout "120"` by default, which scopes
+# the wait to the `apt` binary ONLY - `apt-get` still fails instantly on a held
+# lock. PatchMon's agent shells out to `apt-get`, and this fleet runs two
+# patching systems side by side (PatchMon, plus apt-daily/apt-daily-upgrade
+# timers and unattended-upgrades from this same role). Debian's apt timers use
+# a large randomised delay, so the two collide at unpredictable times.
+#
+# That collision - not a broken host - is what produced 139 failed and 86
+# timed-out patch runs across every host in 30 days, e.g.
+#   "E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by
+#    process 2459474 (apt-get)"  -> apt-get install failed: exit status 100
+#
+# Setting it unscoped makes apt-get wait instead of failing. Fixes the same
+# race for Ansible's own apt tasks too.
+- name: Make apt-get wait for the dpkg lock instead of failing immediately
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99-lock-timeout
+    content: |
+      // Managed by Ansible (common role) - see packages.yml for why.
+      DPkg::Lock::Timeout "300";
+    owner: root
+    group: root
+    mode: '0644'
+  when: inventory_hostname not in groups['proxmox_nodes']
+  tags: [configure]

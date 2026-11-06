@@ -1,0 +1,45 @@
+---
+- name: Install apt dependencies
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - software-properties-common
+      - wget
+      - ca-certificates
+      - gnupg
+    state: present
+    update_cache: true
+  tags: [install]
+
+- name: Create Grafana keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags: [install]
+
+- name: Download Grafana GPG key
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /etc/apt/keyrings/grafana.asc
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [install]
+
+- name: Add Grafana OSS apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main"
+    state: present
+    filename: grafana
+  tags: [install]
+
+- name: Install Grafana OSS
+  ansible.builtin.apt:
+    name: "{% if grafana_version == 'latest' %}grafana{% else %}grafana={{ grafana_version }}{% endif %}"
+    state: "{% if grafana_version == 'latest' %}latest{% else %}present{% endif %}"
+    update_cache: true
+  notify: Restart grafana
+  tags: [install]

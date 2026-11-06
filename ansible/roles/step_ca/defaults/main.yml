@@ -1,0 +1,15 @@
+---
+step_ca_image: "smallstep/step-ca"
+step_ca_image_tag: "latest"
+step_ca_container: step-ca
+step_ca_data_root: /opt/step-ca
+step_ca_port: 9000
+
+step_ca_name: "example.lab Internal CA"
+step_ca_dns_names: "step-ca.example.lab,10.20.30.47,localhost,127.0.0.1"
+step_ca_provisioner_name: "admin"
+
+# Real value lives in OpenBao (secret/step-ca) via the step-ca-kv AppRole,
+# not group_vars/secrets.yml - matches the vault-first convention used by
+# every role converted so far (see docs/todo.md's OpenBao conversion item).
+step_ca_password: "changeme"

@@ -1,0 +1,25 @@
+---
+- name: Deploy keepalived VRRP VIP across all three AdGuard instances
+  hosts: adguard.example.lab,adguard-secondary.example.lab
+  become: true
+  gather_facts: true
+  vars:
+    keepalived_auth_pass: "exampledns"
+    keepalived_unicast_peers_all:
+      - 10.20.1.5
+      - 10.20.1.9
+      - 10.20.1.120
+  pre_tasks:
+    - name: Set per-host priority/peers
+      ansible.builtin.set_fact:
+        keepalived_priority: "{{ 150 if 'adguard.example.lab' == inventory_hostname else 100 }}"
+        keepalived_unicast_peers: "{{ keepalived_unicast_peers_all | reject('equalto', ansible_host) | list }}"
+
+  roles:
+    - role: common
+      tags: [common]
+    - role: node_exporter
+      tags: [node_exporter]
+    - role: alloy
+      tags: [alloy]
+    - keepalived

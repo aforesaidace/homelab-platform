@@ -1,0 +1,15 @@
+---
+# Consumed by ansible-lint's auto-discovery (unaffected by the documented
+# `yamllint -d relaxed ansible/` CLI command, which passes -d explicitly and
+# so ignores this file entirely). Long Jinja-heavy lines are common and not
+# worth failing a build over - see docs/known-issues.md Known Issue #61's
+# ansible-lint baseline follow-up.
+extends: relaxed
+
+rules:
+  line-length: disable
+  comments:
+    min-spaces-from-content: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

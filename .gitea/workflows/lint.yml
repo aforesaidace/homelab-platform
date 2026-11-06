@@ -1,0 +1,50 @@
+name: Lint and Validate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run yamllint
+        run: yamllint -d relaxed ansible/
+
+  ansible-syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check all playbooks
+        run: |
+          for pb in ansible/playbooks/*.yml; do
+            echo "=== $pb ==="
+            ansible-playbook -i ansible/inventory.yml "$pb" --syntax-check
+          done
+
+  ansible-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ansible-lint
+        run: ansible-lint ansible/roles/ ansible/playbooks/
+
+  tofu-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create dummy SSH key (CI only, never used for real infra)
+        run: |
+          mkdir -p ~/.ssh
+          [ -f ~/.ssh/rober_ed25519 ] || ssh-keygen -t ed25519 -f ~/.ssh/rober_ed25519 -N "" -q
+      - name: tofu init and validate
+        env:
+          TF_VAR_proxmox_pve1_endpoint: "https://ci-placeholder:8006"
+          TF_VAR_ssh_public_keys: "ssh-ed25519 AAAA-placeholder ci@placeholder"
+          TF_VAR_proxmox_api_token: "ci-placeholder-token"
+        run: |
+          cd tofu
+          tofu init -backend=false
+          tofu validate

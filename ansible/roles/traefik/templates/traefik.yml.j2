@@ -1,0 +1,47 @@
+# Managed by Ansible — do not edit manually
+# Role: traefik
+#
+# Static config only. Routers/services/middlewares live in dynamic.yml
+# (the file provider), watched for changes with no restart needed -
+# static config (this file) does need a restart to take effect.
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: cloudflare
+        domains:
+          - main: "example.lab"
+            sans:
+              - "*.example.lab"
+
+certificatesResolvers:
+  cloudflare:
+    acme:
+      email: "{{ traefik_acme_email }}"
+      storage: /letsencrypt/acme.json
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+api:
+  dashboard: true
+  insecure: true # dashboard only reachable on the container's own network today, not exposed via a router - fine for Phase 1 verification
+
+log:
+  level: INFO

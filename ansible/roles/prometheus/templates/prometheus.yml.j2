@@ -1,0 +1,97 @@
+# Managed by Ansible — do not edit manually
+# Role: prometheus
+
+global:
+  scrape_interval: {{ prometheus_scrape_interval }}
+  evaluation_interval: {{ prometheus_evaluation_interval }}
+  scrape_timeout: {{ prometheus_scrape_timeout }}
+  external_labels:
+    environment: homelab
+    site: example
+
+rule_files:
+  - "{{ prometheus_config_dir }}/rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "{{ prometheus_alertmanager_target }}"
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:{{ prometheus_port }}
+        labels:
+          instance: prometheus
+
+{% for job in prometheus_scrape_targets %}
+  - job_name: {{ job.job_name }}
+{% if job.scrape_interval is defined %}
+    scrape_interval: {{ job.scrape_interval }}
+{% endif %}
+{% if job.scrape_timeout is defined %}
+    scrape_timeout: {{ job.scrape_timeout }}
+{% endif %}
+{% if job.metrics_path is defined %}
+    metrics_path: {{ job.metrics_path }}
+{% endif %}
+{% if job.scheme is defined %}
+    scheme: {{ job.scheme }}
+{% endif %}
+{% if job.params is defined %}
+    params:
+{% for key, value in job.params.items() %}
+      {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+    static_configs:
+{% for static in job.static_configs %}
+      - targets:
+{% for target in static.targets %}
+          - {{ target }}
+{% endfor %}
+{% if static.labels is defined %}
+        labels:
+{% for key, value in static.labels.items() %}
+          {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% if job.relabel_configs is defined %}
+    relabel_configs:
+{% for relabel in job.relabel_configs %}
+      - {{ relabel | to_nice_yaml(indent=2) | indent(8) }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+  # --- node_exporter on every host, targets from Nautobot (the source of
+  # truth): scripts/nautobot_prometheus_sd.py, synced by the nautobot-sd
+  # timer. VMs + seeded devices, minus node_exporter=false. Was two jobs
+  # until 2026-10-24 (this + an inventory-generated one), which paged every
+  # alert twice. Add/remove a host in Nautobot, not here. ---
+  - job_name: node
+    scrape_interval: {{ prometheus_node_scrape_interval }}
+    file_sd_configs:
+      - files:
+          - {{ prometheus_nautobot_sd_output }}
+        refresh_interval: 1m
+
+  # NetAlertX (Known Issue #90, Initiative 3) - /metrics requires a bearer
+  # token (app denies every request without one); passed as a query-string
+  # ?token= param since it's the one auth method the generic scrape-target
+  # loop's `params` support already covers. Token injected at render time
+  # from secret/netalertx via prometheus_netalertx_api_token
+  # (monitoring.yml) - never in this file or group_vars/monitoring.yml.
+  - job_name: netalertx
+    scrape_interval: 60s
+    metrics_path: /metrics
+    params:
+      token: ["{{ prometheus_netalertx_api_token }}"]
+    static_configs:
+      - targets:
+          - 10.20.30.18:20212
+        labels:
+          instance: netalertx

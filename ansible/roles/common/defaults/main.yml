@@ -1,0 +1,42 @@
+---
+# User
+common_ops_user: ops
+common_timezone: "America/Chicago"
+
+# Fleet automation account (see tasks/user.yml). The public key is read on the
+# controller; the private half is the inventory's ansible_ssh_private_key_file.
+common_automation_user: ansible
+# Fixed path, not derived from ansible_ssh_private_key_file: the n8n Diun runner
+# overrides that variable with n8n's key. Where the file doesn't exist (the
+# runner), the key task is skipped - the account was already given its key by a
+# run from workstation/devbox.
+common_automation_pubkey_file: "~/.ssh/ansible_ed25519.pub"
+
+# journald local retention - Loki already holds the durable 31-day copy
+# (loki_retention_period, 744h), so local journald is deliberately just a
+# short buffer for the failure modes centralization can't cover (before
+# Alloy is up at boot, a host losing network to Loki, quick on-box
+# debugging) - not a second archive. No journald config existed anywhere
+# in this repo before 2026-08-23 - every host ran on distro defaults,
+# which cap by size (~10% of filesystem, ~4GB) with no time limit at all,
+# meaningful overhead on the fleet's many 10-20GB LXCs.
+journald_max_retention: "1week"
+journald_max_use: "500M"
+
+# SSH hardening
+sshd_port: 22
+sshd_permit_root_login: "prohibit-password"
+sshd_password_authentication: "no"
+sshd_pubkey_authentication: "yes"
+sshd_x11_forwarding: "no"
+sshd_max_auth_tries: 3
+sshd_allowed_users: "{{ common_ops_user }}"
+
+# node_exporter
+node_exporter_version: "1.8.1"
+node_exporter_port: 9100
+node_exporter_user: node_exporter
+node_exporter_group: node_exporter
+node_exporter_uid: 993
+node_exporter_gid: 993
+node_exporter_install_dir: /usr/local/bin

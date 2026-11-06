@@ -1,0 +1,7 @@
+---
+- name: Restart openbao
+  community.docker.docker_container:
+    name: "{{ openbao_container_name }}"
+    state: started
+    restart: true
+  listen: Restart openbao

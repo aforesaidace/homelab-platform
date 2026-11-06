@@ -1,0 +1,57 @@
+---
+# Ansible collection dependencies for this repo.
+#
+# These were previously undeclared: the playbooks have always required them,
+# but nothing installed them and CI had no install step at all. Locally that
+# showed up as `ansible-lint` failing with `unknown-module` on
+# community.general.timezone and community.docker.docker_container even though
+# both collections were present - the distro `ansible` package ships them under
+# /usr/lib/pythonX.Y/site-packages/ansible_collections, which is NOT on
+# ansible's default collections path, so the pip-installed `ansible-lint`
+# couldn't resolve them while `ansible-playbook` could.
+#
+# Installing via this file puts them in ~/.ansible/collections, which IS on the
+# default path, so both tools resolve identically without pinning any
+# machine-specific or Python-version-specific path in ansible.cfg.
+#
+#     ansible-galaxy collection install -r ansible/requirements.yml
+#
+# Versions are floors, set to what is known-good rather than exact pins - these
+# are stable, widely-used collections and this repo does not need
+# reproducible-to-the-patch builds.
+
+collections:
+  # docker_container / docker_image / docker_network / docker_container_info -
+  # this repo deploys containers as individual tasks, not via docker-compose,
+  # so this is the single most-used non-builtin collection here.
+  - name: community.docker
+    version: ">=5.2.2"
+
+  # timezone, ufw, modprobe
+  - name: community.general
+    version: ">=13.3.0"
+
+  # vault_kv2_get - how the OpenBao-converted roles read their secrets.
+  - name: community.hashi_vault
+    version: ">=7.1.0"
+
+  # authorized_key, mount, sysctl
+  - name: ansible.posix
+    version: ">=2.2.2"
+
+  # k8s / k8s_info / helm / helm_repository - the K3s cluster roles.
+  - name: kubernetes.core
+    version: ">=6.5.0"
+
+  # postgresql_db / postgresql_user / postgresql_owner - the shared Postgres
+  # instance's per-app database provisioning (ansible/roles/postgres_shared/).
+  - name: community.postgresql
+    version: ">=4.1.0"
+
+  # networktocode.nautobot.inventory - dynamic inventory plugin, Phase
+  # 3(a) of the NetBox->Nautobot migration (docs/todo.md Initiative 1).
+  # Correct namespace is networktocode.nautobot, NOT nautobot.nautobot
+  # (that was a naming error in this repo's own earlier planning notes,
+  # confirmed against the collection's real docs/GitHub org).
+  - name: networktocode.nautobot
+    version: ">=5.0.0"

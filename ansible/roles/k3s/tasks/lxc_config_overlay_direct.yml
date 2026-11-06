@@ -1,0 +1,56 @@
+---
+# ansible/roles/k3s/tasks/lxc_config_overlay_direct.yml
+#
+# Writes the 4 required LXC config overlay lines to a single K3s LXC config
+# file on the Proxmox host. VMID is passed directly (not discovered via pct).
+#
+# Required lines and why:
+#   lxc.cap.drop:                     — Drop no caps; keep NET_ADMIN for Flannel
+#   lxc.apparmor.profile: unconfined  — Allow mount/pivot_root for kubelet
+#   lxc.mount.auto: proc:rw sys:rw cgroup:rw  — Writable /proc/sys for kubelet
+#   lxc.cgroup2.devices.allow: c 10:200 rwm   — /dev/net/tun for K3s service LB
+#
+# Runs against the Proxmox host as root via proxmox_root_ssh_key.
+
+- name: "Ensure lxc.cap.drop is empty, keeping all caps: {{ lxc_item.hostname }}"
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ lxc_item.vmid }}.conf"
+    line: "lxc.cap.drop:"
+    insertafter: "^#Managed by OpenTofu"
+    state: present
+  register: ln_cap_drop
+
+- name: "Ensure lxc.apparmor.profile: unconfined for {{ lxc_item.hostname }}"
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ lxc_item.vmid }}.conf"
+    line: "lxc.apparmor.profile: unconfined"
+    insertafter: "^lxc\\.cap\\.drop:"
+    state: present
+  register: ln_apparmor
+
+- name: "Ensure lxc.mount.auto for {{ lxc_item.hostname }}"
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ lxc_item.vmid }}.conf"
+    line: "lxc.mount.auto: proc:rw sys:rw cgroup:rw"
+    insertafter: "^lxc\\.apparmor\\.profile:"
+    state: present
+  register: ln_mount_auto
+
+- name: "Ensure lxc.cgroup2.devices.allow for {{ lxc_item.hostname }}"
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ lxc_item.vmid }}.conf"
+    line: "lxc.cgroup2.devices.allow: c 10:200 rwm"
+    insertafter: "^lxc\\.mount\\.auto:"
+    state: present
+  register: ln_cgroup2
+
+- name: "Reboot LXC if config changed: {{ lxc_item.hostname }}"
+  ansible.builtin.command: "/usr/sbin/pct reboot {{ lxc_item.vmid }}"
+  when: ln_cap_drop.changed or ln_apparmor.changed or ln_mount_auto.changed or ln_cgroup2.changed
+  changed_when: true
+
+- name: "Wait for LXC to come back up after reboot: {{ lxc_item.hostname }}"
+  ansible.builtin.wait_for_connection:
+    delay: 15
+    timeout: 120
+  when: ln_cap_drop.changed or ln_apparmor.changed or ln_mount_auto.changed or ln_cgroup2.changed

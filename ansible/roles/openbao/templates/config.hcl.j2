@@ -1,0 +1,37 @@
+ui = true
+
+api_addr     = "http://{{ ansible_default_ipv4.address }}:{{ openbao_port }}"
+cluster_addr = "http://{{ ansible_default_ipv4.address }}:{{ openbao_cluster_port }}"
+
+storage "raft" {
+  path    = "/openbao/data"
+  node_id = "{{ inventory_hostname_short }}"
+}
+
+listener "tcp" {
+  address     = "0.0.0.0:{{ openbao_port }}"
+  tls_disable = true
+  telemetry {
+    unauthenticated_metrics_access = true
+  }
+}
+
+# Real Prometheus metrics - added 2026-08-23 after a real incident (see
+# docs/known-issues.md) where this instance crash-looped sealed for an
+# unknown window with zero alerting, since the only monitoring was an
+# n8n workflow that can itself go down at the same time. /v1/sys/metrics
+# now scraped directly by Prometheus so seal status shows up as a real
+# metric, independent of n8n's own health.
+telemetry {
+  prometheus_retention_time = "24h"
+  disable_hostname          = true
+}
+
+{% if openbao_role == "main" and openbao_seal_token %}
+seal "transit" {
+  address    = "{{ openbao_seal_address }}"
+  token      = "{{ openbao_seal_token }}"
+  key_name   = "{{ openbao_seal_key_name }}"
+  mount_path = "transit/"
+}
+{% endif %}

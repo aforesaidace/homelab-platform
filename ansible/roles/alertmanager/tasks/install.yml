@@ -1,0 +1,63 @@
+---
+- name: Set alertmanager archive name
+  ansible.builtin.set_fact:
+    alertmanager_archive: "alertmanager-{{ alertmanager_version }}.linux-amd64"
+  tags: [install]
+
+- name: Check if alertmanager binary already exists at correct version
+  ansible.builtin.command:
+    cmd: "{{ alertmanager_install_dir }}/alertmanager --version"
+  register: alertmanager_installed_version
+  changed_when: false
+  failed_when: false
+  tags: [install]
+  check_mode: false  # read-only; without this --check always "downloads" then fails
+
+- name: Download Alertmanager archive from GitHub releases
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}/{{ alertmanager_archive }}.tar.gz"
+    dest: "/tmp/{{ alertmanager_archive }}.tar.gz"
+    mode: '0644'
+    timeout: 60
+  when: alertmanager_version not in ((alertmanager_installed_version.stdout | default('')) ~ (alertmanager_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Extract Alertmanager archive
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ alertmanager_archive }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+  when: alertmanager_version not in ((alertmanager_installed_version.stdout | default('')) ~ (alertmanager_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Install alertmanager binary
+  ansible.builtin.copy:
+    src: "/tmp/{{ alertmanager_archive }}/alertmanager"
+    dest: "{{ alertmanager_install_dir }}/alertmanager"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  when: alertmanager_version not in ((alertmanager_installed_version.stdout | default('')) ~ (alertmanager_installed_version.stderr | default('')))
+  notify: Restart alertmanager
+  tags: [install]
+
+- name: Install amtool binary
+  ansible.builtin.copy:
+    src: "/tmp/{{ alertmanager_archive }}/amtool"
+    dest: "{{ alertmanager_install_dir }}/amtool"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  when: alertmanager_version not in ((alertmanager_installed_version.stdout | default('')) ~ (alertmanager_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Clean up temp archive
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/{{ alertmanager_archive }}.tar.gz"
+    - "/tmp/{{ alertmanager_archive }}"
+  tags: [install]

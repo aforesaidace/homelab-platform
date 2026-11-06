@@ -1,0 +1,75 @@
+{
+ "id": null,
+ "uid": "netalertx",
+ "title": "NetAlertX",
+ "tags": ["homelab", "network", "security"],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "1m",
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "id": 1,
+   "title": "Connected Devices",
+   "type": "stat",
+   "datasource": {"type": "prometheus", "uid": "prometheus-ds"},
+   "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+   "fieldConfig": {"defaults": {"unit": "none", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}}, "overrides": []},
+   "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_connected_devices", "instant": true}]
+  },
+  {
+   "id": 2,
+   "title": "New Devices",
+   "type": "stat",
+   "datasource": {"type": "prometheus", "uid": "prometheus-ds"},
+   "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+   "fieldConfig": {"defaults": {"unit": "none", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}, "overrides": []},
+   "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_new_devices", "instant": true}]
+  },
+  {
+   "id": 3,
+   "title": "Down Devices",
+   "type": "stat",
+   "datasource": {"type": "prometheus", "uid": "prometheus-ds"},
+   "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+   "fieldConfig": {"defaults": {"unit": "none", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+   "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_down_devices", "instant": true}]
+  },
+  {
+   "id": 4,
+   "title": "Offline Devices",
+   "type": "stat",
+   "datasource": {"type": "prometheus", "uid": "prometheus-ds"},
+   "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+   "fieldConfig": {"defaults": {"unit": "none", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []},
+   "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_offline_devices", "instant": true}]
+  },
+  {
+   "id": 5,
+   "title": "Connected Devices Over Time",
+   "type": "timeseries",
+   "datasource": {"type": "prometheus", "uid": "prometheus-ds"},
+   "gridPos": {"h": 8, "w": 24, "x": 0, "y": 6},
+   "fieldConfig": {"defaults": {"unit": "none"}, "overrides": []},
+   "targets": [
+    {"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_connected_devices", "legendFormat": "connected"},
+    {"refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_new_devices", "legendFormat": "new"},
+    {"refId": "C", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_down_devices", "legendFormat": "down"},
+    {"refId": "D", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_offline_devices", "legendFormat": "offline"}
+   ]
+  },
+  {
+   "id": 6,
+   "title": "Device Status (by MAC)",
+   "type": "table",
+   "datasource": {"type": "prometheus", "uid": "prometheus-ds"},
+   "gridPos": {"h": 10, "w": 24, "x": 0, "y": 14},
+   "fieldConfig": {"defaults": {}, "overrides": []},
+   "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus-ds"}, "expr": "netalertx_device_status", "instant": true, "format": "table"}]
+  }
+ ]
+}

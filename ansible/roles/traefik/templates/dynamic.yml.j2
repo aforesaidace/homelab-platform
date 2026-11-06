@@ -1,0 +1,50 @@
+# Managed by Ansible — do not edit manually
+# Role: traefik
+#
+# File provider dynamic config - watched live, no restart needed on
+# change. This is the git-tracked, declarative replacement for NPM's
+# click-ops SQLite config (see docs/known-issues.md #111/#112,
+# docs/todo.md's NPM->Traefik decision).
+
+http:
+  routers:
+{% for host in traefik_hosts %}
+    {{ host.domain | replace('.', '-') }}:
+      rule: "Host(`{{ host.domain }}`)"
+      entryPoints:
+        - websecure
+      service: "{{ host.domain | replace('.', '-') }}"
+{% if host.headers_middleware is defined %}
+      middlewares:
+        - "{{ host.domain | replace('.', '-') }}-headers"
+{% endif %}
+      # No `tls:` field here deliberately - see docs/known-issues.md.
+      # Any router with an explicit tls stanza (even bare `tls: {}`)
+      # triggers Traefik to request its OWN individual ACME cert for its
+      # Host() rule via the only configured certResolver, competing with
+      # the entryPoint's already-issued wildcard instead of reusing it.
+      # Omitting tls entirely lets the websecure entryPoint's own static
+      # TLS config (certResolver+domains, in traefik.yml.j2) serve every
+      # router on it with the one shared wildcard cert, no per-router
+      # ACME calls at all. Verified live: a single-router test correctly
+      # requested exactly 1 certificate ("example.lab,
+      # *.example.lab"), not N.
+{% endfor %}
+
+  services:
+{% for host in traefik_hosts %}
+    {{ host.domain | replace('.', '-') }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ host.forward_host }}:{{ host.forward_port }}"
+{% endfor %}
+
+{% set hosts_with_headers = traefik_hosts | selectattr('headers_middleware', 'defined') | list %}
+{% if hosts_with_headers %}
+  middlewares:
+{% for host in hosts_with_headers %}
+    {{ host.domain | replace('.', '-') }}-headers:
+      headers:
+{{ host.headers_middleware | to_nice_yaml(indent=2) | indent(8, first=True) }}
+{% endfor %}
+{% endif %}

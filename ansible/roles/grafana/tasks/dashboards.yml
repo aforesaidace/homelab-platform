@@ -1,0 +1,67 @@
+---
+- name: Deploy dashboard provisioning config
+  ansible.builtin.template:
+    src: dashboard-provider.yml.j2
+    dest: "{{ grafana_provisioning_dir }}/dashboards/provider.yml"
+    owner: "{{ grafana_user }}"
+    group: "{{ grafana_group }}"
+    mode: '0640'
+  notify: Restart grafana
+  tags: [configure, dashboards]
+
+- name: Ensure Grafana is started before downloading dashboards
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [configure, dashboards]
+
+- name: Wait for Grafana API to become available
+  ansible.builtin.uri:
+    url: "http://localhost:{{ grafana_port }}/api/health"
+    method: GET
+    status_code: 200
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: 20
+  delay: 5
+  tags: [configure, dashboards]
+
+- name: Download dashboards from Grafana.com
+  ansible.builtin.uri:
+    url: "https://grafana.com/api/dashboards/{{ item }}/revisions/latest/download"
+    method: GET
+    dest: "{{ grafana_dashboards_dir }}/files/{{ item }}.json"
+    status_code: 200
+    timeout: 30
+  loop: "{{ grafana_dashboard_ids }}"
+  tags: [configure, dashboards]
+
+- name: Set ownership on downloaded dashboard files
+  ansible.builtin.file:
+    path: "{{ grafana_dashboards_dir }}/files/{{ item }}.json"
+    owner: "{{ grafana_user }}"
+    group: "{{ grafana_group }}"
+    mode: '0640'
+  loop: "{{ grafana_dashboard_ids }}"
+  tags: [configure, dashboards]
+
+- name: Remove retired dashboard files
+  ansible.builtin.file:
+    path: "{{ grafana_dashboards_dir }}/files/{{ item }}"
+    state: absent
+  loop: "{{ grafana_retired_dashboard_files }}"
+  notify: Restart grafana
+  tags: [configure, dashboards]
+
+- name: Deploy custom homelab-authored dashboards
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ grafana_dashboards_dir }}/files/{{ item }}"
+    owner: "{{ grafana_user }}"
+    group: "{{ grafana_group }}"
+    mode: '0640'
+  loop: "{{ grafana_custom_dashboards }}"
+  notify: Restart grafana
+  tags: [configure, dashboards]

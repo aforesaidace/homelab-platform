@@ -1,0 +1,107 @@
+---
+# All API calls use HTTP basic auth with credentials from secrets.yml
+
+- name: Configure upstream DNS resolvers
+  uri:
+    url: "{{ adguard_api_url }}/control/dns_config"
+    method: POST
+    user: "{{ adguard_user }}"
+    password: "{{ adguard_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      upstream_dns: "{{ adguard_upstreams }}"
+      bootstrap_dns: "{{ adguard_bootstrap_dns }}"
+      upstream_mode: "parallel"
+      cache_size: 4194304
+      cache_ttl_min: 300
+      cache_ttl_max: 86400
+      protection_enabled: true
+      ratelimit: "{{ adguard_ratelimit }}"
+      ratelimit_whitelist: "{{ adguard_ratelimit_whitelist }}"
+    status_code: 200
+
+- name: Get existing DNS rewrites
+  uri:
+    url: "{{ adguard_api_url }}/control/rewrite/list"
+    method: GET
+    user: "{{ adguard_user }}"
+    password: "{{ adguard_password }}"
+    force_basic_auth: true
+    status_code: 200
+  register: existing_rewrites
+
+- name: Build map of existing rewrite domain to answer
+  set_fact:
+    existing_rewrite_map: "{{ dict((existing_rewrites.json | default([])) | map(attribute='domain') | zip((existing_rewrites.json | default([])) | map(attribute='answer'))) }}"
+
+- name: Delete DNS rewrites whose answer has drifted from the desired value
+  uri:
+    url: "{{ adguard_api_url }}/control/rewrite/delete"
+    method: POST
+    user: "{{ adguard_user }}"
+    password: "{{ adguard_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      domain: "{{ item.domain }}"
+      answer: "{{ existing_rewrite_map[item.domain] }}"
+    status_code: 200
+  loop: "{{ adguard_rewrites }}"
+  when: item.domain in existing_rewrite_map and existing_rewrite_map[item.domain] != item.answer
+  loop_control:
+    label: "{{ item.domain }}: {{ existing_rewrite_map[item.domain] | default('') }} → {{ item.answer }}"
+
+- name: Delete DNS rewrites for retired hosts (adguard_rewrites_absent)
+  uri:
+    url: "{{ adguard_api_url }}/control/rewrite/delete"
+    method: POST
+    user: "{{ adguard_user }}"
+    password: "{{ adguard_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      domain: "{{ item }}"
+      answer: "{{ existing_rewrite_map[item] }}"
+    status_code: 200
+  loop: "{{ adguard_rewrites_absent | default([]) }}"
+  when: item in existing_rewrite_map
+  changed_when: true
+
+- name: Add DNS rewrites for example.lab hosts
+  uri:
+    url: "{{ adguard_api_url }}/control/rewrite/add"
+    method: POST
+    user: "{{ adguard_user }}"
+    password: "{{ adguard_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      domain: "{{ item.domain }}"
+      answer: "{{ item.answer }}"
+    status_code: 200
+  loop: "{{ adguard_rewrites }}"
+  when: item.domain not in existing_rewrite_map or existing_rewrite_map[item.domain] != item.answer
+  loop_control:
+    label: "{{ item.domain }} → {{ item.answer }}"
+
+- name: Enable DHCP server off (we use Unifi for DHCP)
+  uri:
+    url: "{{ adguard_api_url }}/control/dhcp/set_config"
+    method: POST
+    user: "{{ adguard_user }}"
+    password: "{{ adguard_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      enabled: false
+    status_code: 200
+
+- name: Verify AdGuard DNS is responding
+  command: >
+    dig +short pve1.example.lab @{{ ansible_host }}
+  register: dig_result
+  changed_when: false
+  failed_when: "'10.20.1.70' not in dig_result.stdout"
+  delegate_to: localhost
+  become: false

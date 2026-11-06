@@ -1,0 +1,66 @@
+---
+- name: Check if docker is present
+  ansible.builtin.command: getent group docker
+  register: _common_docker_group_check
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only; otherwise --check treats every host as a Docker host
+
+- name: Deploy docker container restart-check script (Docker hosts only)
+  ansible.builtin.template:
+    src: docker_restart_check.sh.j2
+    dest: /usr/local/bin/docker_restart_check.sh
+    owner: root
+    group: root
+    mode: '0755'
+  when: _common_docker_group_check.rc == 0
+
+- name: Deploy docker_restart_check systemd service (Docker hosts only)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker-restart-check.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by Ansible — do not edit manually
+      # Role: common
+      [Unit]
+      Description=Write Docker container restart/running metrics to node_exporter textfile collector
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/docker_restart_check.sh
+  when: _common_docker_group_check.rc == 0
+  notify: Reload systemd
+
+- name: Deploy docker_restart_check systemd timer (Docker hosts only)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker-restart-check.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by Ansible — do not edit manually
+      # Role: common
+      [Unit]
+      Description=Run docker_restart_check.sh every 30 seconds
+
+      [Timer]
+      OnBootSec=15s
+      OnUnitActiveSec=30s
+      AccuracySec=1s
+
+      [Install]
+      WantedBy=timers.target
+  when: _common_docker_group_check.rc == 0
+  notify: Reload systemd
+
+- name: Enable and start docker_restart_check timer (Docker hosts only)
+  ansible.builtin.systemd:
+    name: docker-restart-check.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  # --check can't enable a timer this same run would create; real runs must not fail silently.
+  ignore_errors: "{{ ansible_check_mode }}"
+  when: _common_docker_group_check.rc == 0

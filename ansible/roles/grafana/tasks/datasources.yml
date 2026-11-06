@@ -1,0 +1,10 @@
+---
+- name: Deploy datasources provisioning config
+  ansible.builtin.template:
+    src: datasources.yml.j2
+    dest: "{{ grafana_provisioning_dir }}/datasources/datasources.yml"
+    owner: "{{ grafana_user }}"
+    group: "{{ grafana_group }}"
+    mode: '0640'
+  notify: Restart grafana
+  tags: [configure, datasources]

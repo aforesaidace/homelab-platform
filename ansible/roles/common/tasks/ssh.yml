@@ -1,0 +1,28 @@
+---
+- name: Install OpenSSH server
+  when: inventory_hostname not in groups['proxmox_nodes']
+  ansible.builtin.apt:
+    name: openssh-server
+    state: present
+    update_cache: true
+  tags: [install]
+
+- name: Deploy sshd_config
+  when: inventory_hostname not in groups['proxmox_nodes']
+  ansible.builtin.template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0600'
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify: Restart ssh
+  tags: [configure]
+
+- name: Ensure ssh service is enabled and running
+  when: inventory_hostname not in groups['proxmox_nodes']
+  ansible.builtin.service:
+    name: ssh
+    state: started
+    enabled: true
+  tags: [service]

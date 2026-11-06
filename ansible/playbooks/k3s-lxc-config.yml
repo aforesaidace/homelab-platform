@@ -1,0 +1,42 @@
+---
+# ansible/playbooks/k3s-lxc-config.yml
+#
+# Applies required LXC config overlay lines to K3s LXCs directly on the
+# Proxmox hosts. Runs as root via `proxmox_root_ssh_key` (group_vars/all.yml).
+#
+# Usage:
+#   ansible-playbook -i ansible/inventory.yml ansible/playbooks/k3s-lxc-config.yml
+
+- name: "Apply LXC config overlay on pve1 (k3s-cp1=115, k3s-worker1=118, k3s-gpu1=120)"
+  hosts: pve1.example.lab
+  gather_facts: false
+  vars:
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ proxmox_root_ssh_key }}"
+
+  tasks:
+    - name: "Apply overlay for K3s LXCs on pve1"
+      ansible.builtin.include_tasks: ../roles/k3s/tasks/lxc_config_overlay_direct.yml
+      loop:
+        - { hostname: k3s-cp1, vmid: 115 }
+        - { hostname: k3s-worker1, vmid: 118 }
+        - { hostname: k3s-gpu1, vmid: 120 }
+      loop_control:
+        loop_var: lxc_item
+
+- name: "Apply LXC config overlay on pve2 (k3s-cp2=117, k3s-cp3=116, k3s-worker2=119)"
+  hosts: pve2.example.lab
+  gather_facts: false
+  vars:
+    ansible_user: root
+    ansible_ssh_private_key_file: "{{ proxmox_root_ssh_key }}"
+
+  tasks:
+    - name: "Apply overlay for K3s LXCs on pve2"
+      ansible.builtin.include_tasks: ../roles/k3s/tasks/lxc_config_overlay_direct.yml
+      loop:
+        - { hostname: k3s-cp2, vmid: 117 }
+        - { hostname: k3s-cp3, vmid: 116 }
+        - { hostname: k3s-worker2, vmid: 119 }
+      loop_control:
+        loop_var: lxc_item

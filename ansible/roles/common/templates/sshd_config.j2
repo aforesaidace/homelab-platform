@@ -1,0 +1,20 @@
+# Managed by Ansible
+UseDNS no
+GSSAPIAuthentication no
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+
+# DO NOT REMOVE. This file replaces Debian's stock sshd_config entirely, and
+# the stock one sets `UsePAM yes`. Without this line sshd falls back to
+# `UsePAM no` and performs its own account validation instead of delegating to
+# PAM - which rejects any account whose /etc/shadow password field is `!`
+# (the normal locked state cloud-init leaves behind), EVEN for pubkey-only
+# auth. That is the root cause of Known Issue #86/#87: `ollama` and then `pbs`
+# were locked out of SSH entirely the moment this managed config was first
+# applied. Confirmed 2026-08-20 - every managed host was running `usepam no`.
+UsePAM yes
+X11Forwarding no
+PrintMotd no
+AcceptEnv LANG LC_*
+Subsystem sftp /usr/lib/openssh/sftp-server

@@ -1,0 +1,8 @@
+[Unit]
+Description=Doc-vs-infra drift reconciliation (scripts/drift_check.py -> n8n)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ drift_check_dir }}/run.sh

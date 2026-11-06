@@ -1,0 +1,177 @@
+---
+prometheus_version: "2.52.0"
+prometheus_port: 9090
+prometheus_storage_retention: "30d"
+prometheus_scrape_interval: "60s"
+prometheus_evaluation_interval: "60s"
+prometheus_scrape_timeout: "10s"
+
+# The 'node' job's targets come from Nautobot (scripts/nautobot_prometheus_sd.py):
+# hosts, IPs, roles and the node_exporter on/off flag all live there now
+# (VMs via the Proxmox job, physical/personal machines via
+# scripts/nautobot_seed/seed.yml). Nothing to add here for a new host.
+prometheus_node_scrape_interval: 60s
+prometheus_scrape_targets:
+  - job_name: crowdsec
+    # CrowdSec engine on the NPM LXC (roles/crowdsec, 2026-10-15). up==0
+    # here fires the fleet-wide InstanceDown alert; cs_* metrics show
+    # parsed lines, scenario hits and decisions.
+    scrape_interval: 60s
+    static_configs:
+      - targets:
+          - 10.20.30.11:6060
+        labels:
+          role: security
+  - job_name: truenas
+    scrape_interval: 60s
+    # honor_labels is required - graphite_exporter's mapping config already
+    # bakes real job="truenas"/instance="nas" labels onto every metric
+    # (from the TrueNAS hostname via its own graphite exporter config), so
+    # Prometheus must not overwrite them with the scrape target's own
+    # host:port-derived instance label.
+    honor_labels: true
+    static_configs:
+      - targets:
+          - 10.20.30.44:9108
+        labels:
+          role: storage
+  - job_name: loki
+    scrape_interval: 60s
+    static_configs:
+      - targets:
+          - 10.20.30.13:3100
+        labels:
+          instance: loki
+  - job_name: grafana
+    scrape_interval: 60s
+    static_configs:
+      - targets:
+          - 10.20.30.14:3000
+        labels:
+          instance: grafana
+  - job_name: scraparr
+    # *arr Prometheus exporter, decided 2026-09-02, deployed 2026-09-14
+    # into arr_core (10.20.40.23:7100) - no new LXC.
+    scrape_interval: 60s
+    static_configs:
+      - targets:
+          - 10.20.40.23:7100
+        labels:
+          instance: arr-core
+  - job_name: unpackerr
+    # Unpackerr's built-in /metrics (added 2026-10-18 with Unpackerr itself,
+    # arr_downloaders role). Alerts in fleet.rules fleet_arr_stack.
+    scrape_interval: 60s
+    static_configs:
+      - targets:
+          - 10.20.40.24:5656
+        labels:
+          instance: arr-downloaders
+  - job_name: cadvisor
+    scrape_interval: 60s
+    # Pilot only (docs/todo.md) - freshrss is the sole target while this
+    # is proven live. The other ~30 docker_update_targets hosts are a
+    # deliberately separate, later rollout, not pre-added here.
+    static_configs:
+      - targets:
+          - 10.20.30.45:9280
+        labels:
+          instance: freshrss
+  - job_name: openbao
+    # OpenBao's own real telemetry, added 2026-08-23 after a real incident
+    # (see docs/known-issues.md) - a crash-looping/sealed instance had zero
+    # Prometheus-side visibility before this, only an n8n workflow that can
+    # itself go down at the same time. unauthenticated_metrics_access is
+    # enabled on the listener specifically so this scrape works without a
+    # token (see ansible/roles/openbao/templates/config.hcl.j2).
+    scrape_interval: 30s
+    metrics_path: /v1/sys/metrics
+    params:
+      format: [prometheus]
+    static_configs:
+      - targets:
+          - 10.20.30.22:8200
+        labels:
+          instance: openbao
+          role: secrets
+      - targets:
+          - 10.20.30.23:8200
+        labels:
+          instance: openbao-seal
+          role: secrets
+  - job_name: blackbox_http
+    # Real synthetic HTTP probing through NPM - added 2026-08-23 after
+    # NPM's entire proxy config went silently empty for ~19 hours with
+    # zero direct signal (see docs/known-issues.md #111/#112) - the only
+    # detection was indirect, via fleet_monitor's checks on unrelated
+    # downstream apps. This probes NPM's actual reverse-proxy function
+    # (does a real HTTPS response come back correctly), not just "is the
+    # port open" (InstanceDown/up==0 already covers that, uselessly, for
+    # this exact failure mode - NPM's own container stayed "up" the whole
+    # incident). module=http_2xx is defined in
+    # ansible/roles/blackbox_exporter/templates/blackbox.yml.j2.
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://grafana.example.lab
+          - https://git.example.lab
+          - https://sonarr.example.lab
+        labels:
+          role: synthetic
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 10.20.30.12:9115
+  - job_name: snmp-unifi
+    # UDM Pro network monitoring via snmp_exporter, decided 2026-08-24
+    # (docs/research.md) - closes the one real gap SNMP was actually
+    # good for (this fleet has zero network-device monitoring otherwise).
+    # SNMPv3 (authPriv, SHA/AES) not v2c - real auth, not a plaintext
+    # community string. auth=unifi_v3 is defined in
+    # ansible/roles/snmp_exporter/templates/snmp.yml.j2.
+    scrape_interval: 60s
+    metrics_path: /snmp
+    params:
+      module: [if_mib]
+      auth: [unifi_v3]
+    static_configs:
+      - targets:
+          - 10.20.1.1
+        labels:
+          role: network
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 10.20.30.12:9116
+  - job_name: pve
+    # Built 2026-09-01 after a real PBS-storage outage (docs/todo.md) went
+    # 2+ days completely unalerted - pve_up{id="storage/..."} is the only
+    # thing in this fleet that would have caught it directly. pve1 alone is
+    # enough to see cluster-wide state (Proxmox's own API returns full
+    # cluster resources - nodes/VMs/LXCs/storage - from either node, not
+    # just the local one), but scraping both gives real per-node coverage
+    # too and survives either node being down for the scrape itself.
+    metrics_path: /pve
+    params:
+      module: [default]
+    static_configs:
+      - targets:
+          - 10.20.1.70
+          - 10.20.1.60
+        labels:
+          role: proxmox
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 10.20.30.12:9221

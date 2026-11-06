@@ -1,0 +1,19 @@
+---
+openbao_image: "openbao/openbao:latest"
+openbao_container_name: openbao
+openbao_data_root: /opt/openbao
+openbao_port: 8200
+openbao_cluster_port: 8201
+
+# "main" holds real secrets and (once bootstrapped) auto-unseals via the
+# transit seal below. "seal" is the small dedicated Transit auto-unseal
+# helper - holds nothing but a transit key, always manually unsealed.
+openbao_role: main
+
+# Only used when openbao_role == main, and only after the seal helper has
+# been bootstrapped (see docs/todo.md / Known Issues for the bootstrap
+# sequence - this token is a real credential, deliberately not committed
+# here as a hardcoded default).
+openbao_seal_address: "http://10.20.30.23:8200"
+openbao_seal_token: ""
+openbao_seal_key_name: "openbao-autounseal"

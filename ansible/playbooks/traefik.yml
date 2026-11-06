@@ -1,0 +1,24 @@
+---
+# cloudflare_api_token comes from OpenBao (secret/cloudflare) via the
+# traefik-kv AppRole - the same credential npm already uses, reused
+# rather than duplicated into a new KV path. role_id isn't sensitive;
+# secret_id must come from ANSIBLE_HASHI_VAULT_SECRET_ID, never committed.
+- name: Deploy Traefik (NPM replacement, Phase 1 - runs alongside NPM)
+  hosts: traefik.example.lab
+  become: true
+  gather_facts: true
+  vars:
+    ansible_hashi_vault_role_id: "e3727c41-f742-73ec-dcfc-042503a00481"
+    ansible_hashi_vault_auth_method: approle
+    ansible_hashi_vault_addr: "http://10.20.30.22:8200"
+    _traefik_vault_secret: "{{ lookup('community.hashi_vault.vault_kv2_get', 'cloudflare').secret }}"
+    cloudflare_api_token: "{{ _traefik_vault_secret.cloudflare_api_token }}"
+  roles:
+    - role: common
+      tags: [common]
+    - role: node_exporter
+      tags: [node_exporter]
+    - role: alloy
+      tags: [alloy]
+    - role: traefik
+      tags: [traefik]

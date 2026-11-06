@@ -1,0 +1,56 @@
+# Managed by Ansible — do not edit manually
+# Role: grafana
+
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+  - name: Loki
+    orgId: 1
+  - name: Alertmanager
+    orgId: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    orgId: 1
+    uid: prometheus-ds
+    url: {{ grafana_prometheus_url }}
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: "60s"
+      queryTimeout: "60s"
+      exemplarTraceIdDestinations:
+        - name: traceID
+          datasourceUid: loki-ds
+
+  - name: Loki
+    type: loki
+    access: proxy
+    orgId: 1
+    uid: loki-ds
+    url: {{ grafana_loki_url }}
+    isDefault: false
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: traceID
+          matcherRegex: "traceID=(\\w+)"
+          url: ""
+
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    orgId: 1
+    uid: alertmanager-ds
+    url: {{ grafana_alertmanager_url }}
+    isDefault: false
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

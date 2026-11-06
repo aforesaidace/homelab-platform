@@ -1,0 +1,19 @@
+---
+# Baseline: this repo predates ansible-lint being enforced in CI (it ran
+# with `|| true` from the start - see docs/known-issues.md Known Issue #61's
+# ansible-lint baseline follow-up). skip_list locks in the two large
+# pre-existing categories below so CI can actually block on everything else
+# without a one-shot 190-file rewrite. Full FQCN/var-naming compliance is
+# tracked in docs/todo.md as its own dedicated cleanup - do not add new
+# violations of these two rules in new code, and shrink this list as files
+# get touched anyway for other reasons.
+exclude_paths:
+  # Home Assistant YAML (deployed verbatim by ansible/roles/homeassistant/)
+  # uses HA's own `!include`/`!secret` tags, which aren't valid generic
+  # YAML - ansible-lint's load-failure check chokes on them. These files
+  # are transferred as-is, not parsed by Ansible.
+  - ansible/roles/homeassistant/files/config/
+
+skip_list:
+  - fqcn         # 110 violations at baseline (2026-07-25) - missing ansible.builtin. prefixes
+  - var-naming   # 102 violations at baseline (2026-07-25) - variable naming convention

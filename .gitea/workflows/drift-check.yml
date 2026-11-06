@@ -1,0 +1,55 @@
+name: Doc-vs-infra drift check
+
+# Runs scripts/drift_check.py against live infra (Proxmox API, NPM API, PBS
+# backup jobs) and fails if the docs have drifted. Complements the weekly
+# systemd timer on the n8n LXC (ansible/roles/drift_check/) - that one posts
+# to Discord; this one gates pull requests that touch infra/docs and gives a
+# second scheduled run.
+#
+# Vault-first, same as the n8n runner: role_id is baked in (not sensitive),
+# secret_id comes from the DRIFT_CHECK_VAULT_SECRET_ID Gitea secret (pushed
+# by scripts/update_gitea_secrets.py). The drift-check-kv AppRole grants
+# read-only on secret/proxmox + secret/homepage + secret/drift-check
+# (added 2026-09-13, Phase 3(c) - a dedicated read-only Nautobot token).
+
+on:
+  schedule:
+    - cron: "30 6 * * 2"  # Tuesday 06:30 UTC - a day after the Trivy sweep, off-peak
+  pull_request:
+    paths:
+      - "docs/vms-lxcs.md"
+      - "docs/services.md"
+      - "tofu/**"
+      - "scripts/drift_check.py"
+  workflow_dispatch:
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: Fetch credentials from OpenBao (drift-check-kv AppRole)
+        env:
+          BAO: http://10.20.30.22:8200
+          ROLE_ID: dcf3085d-e5f4-31c0-dc4d-1df877e378c8
+          SECRET_ID: ${{ secrets.DRIFT_CHECK_VAULT_SECRET_ID }}
+        run: |
+          VT=$(curl -fsS -m 10 -X POST "$BAO/v1/auth/approle/login" \
+                 -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" \
+               | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth"]["client_token"])')
+          [ -z "$VT" ] && { echo "OpenBao login failed"; exit 1; }
+          get() { curl -fsS -m 10 -H "X-Vault-Token: $VT" "$BAO/v1/secret/data/$1" \
+                    | python3 -c "import sys,json;d=json.load(sys.stdin)['data']['data'];print(d['$2'])"; }
+          {
+            echo "PVE_TOKEN=$(get proxmox proxmox2netbox_token_id)=$(get proxmox proxmox2netbox_token_secret)"
+            echo "NPM_EMAIL=$(get homepage homepage_npm_email)"
+            echo "NPM_PASSWORD=$(get homepage homepage_npm_password)"
+            echo "NAUTOBOT_API_TOKEN=$(get drift-check nautobot_api_token)"
+          } >> "$GITHUB_ENV"
+
+      - name: Run drift check
+        run: python3 scripts/drift_check.py

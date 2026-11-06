@@ -1,0 +1,183 @@
+// Managed by Ansible — do not edit manually
+// Role: alloy
+// Promtail replacement (EOL 2026-03-02, see docs/todo.md) - same two jobs
+// Promtail ran (journal + docker), same Loki endpoint. unifi_logs job is
+// deliberately not replicated - confirmed dead everywhere in the fleet
+// (promtail_unifi_logs: false globally, never shipped a line, see
+// ansible/roles/promtail/defaults/main.yml history).
+
+loki.write "default" {
+  endpoint {
+    url       = "{{ loki_url }}/loki/api/v1/push"
+    tenant_id = "homelab"
+  }
+}
+
+{% if alloy_scrape_journal %}
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal__hostname"]
+    target_label  = "hostname"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+  rule {
+    source_labels = ["__journal__transport"]
+    target_label  = "transport"
+  }
+}
+
+{% if alloy_journal_drop %}
+// Drop known-noisy journal lines before shipping (alloy_journal_drop).
+loki.process "journal_filter" {
+  forward_to = [loki.write.default.receiver]
+{% for d in alloy_journal_drop %}
+
+  stage.match {
+    selector            = `{{ d.selector }}`
+    action              = "drop"
+    drop_counter_reason = "{{ d.reason }}"
+  }
+{% endfor %}
+}
+
+{% endif %}
+loki.source.journal "read" {
+  forward_to    = [{{ 'loki.process.journal_filter.receiver' if alloy_journal_drop else 'loki.write.default.receiver' }}]
+  relabel_rules = loki.relabel.journal.rules
+  max_age       = "12h"
+  labels = {
+    job  = "host-services",
+    host = "{{ inventory_hostname }}",
+  }
+}
+{% endif %}
+
+{% if alloy_scrape_docker %}
+discovery.docker "containers" {
+  host              = "unix:///var/run/docker.sock"
+  refresh_interval  = "5s"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_id"]
+    target_label  = "container_id"
+  }
+  rule {
+    target_label = "host"
+    replacement  = "{{ inventory_hostname }}"
+  }
+  rule {
+    target_label = "job"
+    replacement  = "app-containers"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.write.default.receiver]
+}
+{% endif %}
+
+{% if alloy_scrape_proxmox_logs %}
+// pveproxy web UI/API access log - live file only, rotated/.gz history
+// not tailed (already historical, not worth the noise).
+local.file_match "pveproxy" {
+  path_targets = [{
+    __path__ = "/var/log/pveproxy/access.log",
+    job      = "pveproxy",
+    host     = "{{ inventory_hostname }}",
+  }]
+}
+
+loki.source.file "pveproxy" {
+  targets    = local.file_match.pveproxy.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+// Every PVE task (backup jobs, VM start/stop/migrate, everything run
+// against the cluster) gets its own file, named
+// UPID:<node>:<pid>:<pstart>:<starttime>:<type>:<vmid>:<user>:
+// Deliberately only job/host as labels, same low-cardinality convention
+// as every other job in this config - task_type/vmid/user are NOT
+// promoted to labels (confirmed live 2026-08-21: doing so blew past
+// Loki's active-stream limit immediately, HTTP 429, since thousands of
+// historical task files each have a different combination). Query task
+// metadata via LogQL line filters against the log content/file path
+// instead, not indexed labels. sync_period re-scans for new task files
+// as they're created.
+local.file_match "pve_tasks" {
+  path_targets = [{
+    __path__    = "/var/log/pve/tasks/*/UPID:*",
+    job         = "pve-tasks",
+    host        = "{{ inventory_hostname }}",
+  }]
+  sync_period = "30s"
+}
+
+loki.source.file "pve_tasks" {
+  targets    = local.file_match.pve_tasks.targets
+  forward_to = [loki.write.default.receiver]
+}
+{% endif %}
+
+{% if alloy_scrape_amp_logs %}
+// AMP game-panel + console-log jobs - see host_vars/amp.example.lab.yml
+// (alloy_amp_scrape_configs) for the actual job list, paths, and the
+// UTC-timestamp/Factorio-tick-counter gotchas behind why some jobs get a
+// timestamp stage and some don't.
+{% for j in alloy_amp_scrape_configs %}
+{% if j.timestamp_regex is defined %}
+loki.process "{{ j.name }}" {
+  forward_to = [loki.write.default.receiver]
+
+  stage.regex {
+    expression = `{{ j.timestamp_regex }}`
+  }
+  stage.timestamp {
+    source   = "timestamp"
+    format   = "{{ j.timestamp_format }}"
+    location = "UTC"
+  }
+}
+{% endif %}
+
+local.file_match "{{ j.name }}" {
+  path_targets = [{
+    __path__ = "{{ j.path }}",
+    job      = "{{ j.job }}",
+    instance = "{{ j.instance }}",
+{% if j.game is defined %}
+    game     = "{{ j.game }}",
+{% endif %}
+    host     = "{{ inventory_hostname }}",
+  }]
+}
+
+loki.source.file "{{ j.name }}" {
+  targets    = local.file_match.{{ j.name }}.targets
+  forward_to = [{% if j.timestamp_regex is defined %}loki.process.{{ j.name }}.receiver{% else %}loki.write.default.receiver{% endif %}]
+}
+{% endfor %}
+{% endif %}

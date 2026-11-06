@@ -1,0 +1,20 @@
+---
+- name: Create loki group
+  ansible.builtin.group:
+    name: "{{ loki_group }}"
+    gid: "{{ loki_gid }}"
+    system: true
+    state: present
+  tags: [install]
+
+- name: Create loki user
+  ansible.builtin.user:
+    name: "{{ loki_user }}"
+    uid: "{{ loki_uid }}"
+    group: "{{ loki_group }}"
+    shell: /usr/sbin/nologin
+    home: "{{ loki_data_dir }}"
+    create_home: false
+    system: true
+    state: present
+  tags: [install]

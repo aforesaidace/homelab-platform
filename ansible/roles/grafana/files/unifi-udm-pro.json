@@ -1,0 +1,122 @@
+{
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ds"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "expr": "rate(ifHCInOctets{ifName=~\"br0|br10|br2|br20|br30|br4|br40\"}[5m]) * 8",
+          "legendFormat": "{{ifName}} in",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "expr": "rate(ifHCOutOctets{ifName=~\"br0|br10|br2|br20|br30|br4|br40\"}[5m]) * 8",
+          "legendFormat": "{{ifName}} out",
+          "refId": "B"
+        }
+      ],
+      "title": "Interface Traffic (bits/sec)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ds"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "id": 2,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "expr": "rate(ifInErrors{ifName=~\"br0|br10|br2|br20|br30|br4|br40\"}[5m])",
+          "legendFormat": "{{ifName}} in errors",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "expr": "rate(ifOutErrors{ifName=~\"br0|br10|br2|br20|br30|br4|br40\"}[5m])",
+          "legendFormat": "{{ifName}} out errors",
+          "refId": "B"
+        }
+      ],
+      "title": "Interface Errors/Discards (per interval)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ds"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 3,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ds"
+          },
+          "expr": "ifOperStatus{ifName=~\"br0|br10|br2|br20|br30|br4|br40\"}",
+          "legendFormat": "{{ifName}}",
+          "refId": "A"
+        }
+      ],
+      "title": "VLAN Interface Status (1=up, 2=down)",
+      "type": "state-timeline"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "homelab",
+    "snmp",
+    "network"
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "UDM Pro - Network (SNMP)",
+  "uid": "unifi-udm-pro",
+  "version": 1,
+  "editable": false
+}

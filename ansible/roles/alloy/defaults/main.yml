@@ -1,0 +1,33 @@
+---
+alloy_config_dir: /etc/alloy
+alloy_user: alloy
+alloy_group: alloy
+# Arch's `extra` package names all of these differently (grafana-alloy
+# everywhere) - overridden per-host, see host_vars/workstation.yml.
+alloy_package_name: alloy
+alloy_service_name: alloy
+loki_url: "http://10.20.30.13:3100"
+
+alloy_scrape_journal: true
+# Journal lines to drop before they leave the host: a list of
+# {selector, reason}. Each selector is a LogQL stream selector with line
+# filters, applied by a loki.process stage.match with action "drop".
+# Empty by default; set per host (e.g. host_vars/workstation.yml).
+alloy_journal_drop: []
+# Auto-discovers running containers via the Docker socket and labels logs
+# by real container name - same job Promtail's app-containers scrape did.
+# Harmless to leave true on non-Docker hosts (the component just finds
+# nothing). See ansible/roles/promtail/defaults/main.yml for history.
+alloy_scrape_docker: true
+
+# Proxmox host-only jobs (pveproxy access log + per-task logs) - default
+# off, turned on specifically for proxmox_nodes in site.yml since these
+# paths only exist on pve1/pve2, not on any LXC/VM.
+alloy_scrape_proxmox_logs: false
+
+# AMP game-panel/console-log jobs - default off, turned on specifically for
+# the amp host via host_vars/amp.example.lab.yml (alongside the
+# actual alloy_amp_scrape_configs job list), since these paths only exist
+# there. See that file for the full history/gotchas.
+alloy_scrape_amp_logs: false
+alloy_amp_scrape_configs: []

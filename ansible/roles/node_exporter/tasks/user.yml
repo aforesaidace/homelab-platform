@@ -1,0 +1,19 @@
+---
+- name: Create node_exporter group
+  ansible.builtin.group:
+    name: "{{ node_exporter_group }}"
+    system: true
+    state: present
+  tags: [install]
+
+- name: Create node_exporter user
+  ansible.builtin.user:
+    name: "{{ node_exporter_user }}"
+    uid: "{{ node_exporter_uid }}"
+    group: "{{ node_exporter_group }}"
+    shell: /usr/sbin/nologin
+    home: /nonexistent
+    create_home: false
+    system: true
+    state: present
+  tags: [install]

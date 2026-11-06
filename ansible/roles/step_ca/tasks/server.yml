@@ -1,0 +1,30 @@
+---
+- name: Ensure step-ca data directory exists
+  # smallstep/step-ca's entrypoint runs as the non-root "step" user
+  # (UID/GID 1000 in the upstream image) - found live 2026-08-24, the
+  # container crash-looped with "permission denied" writing its init
+  # password file until this directory was owned to match.
+  ansible.builtin.file:
+    path: "{{ step_ca_data_root }}"
+    state: directory
+    mode: "0755"
+    owner: "1000"
+    group: "1000"
+
+- name: Deploy step-ca container
+  community.docker.docker_container:
+    name: "{{ step_ca_container }}"
+    image: "{{ step_ca_image }}:{{ step_ca_image_tag }}"
+    state: started
+    restart_policy: unless-stopped
+    pull: true
+    ports:
+      - "{{ step_ca_port }}:{{ step_ca_port }}"
+    volumes:
+      - "{{ step_ca_data_root }}:/home/step"
+    env:
+      DOCKER_STEPCA_INIT_NAME: "{{ step_ca_name }}"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "{{ step_ca_dns_names }}"
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "{{ step_ca_provisioner_name }}"
+      DOCKER_STEPCA_INIT_PASSWORD: "{{ step_ca_password }}"
+      DOCKER_STEPCA_INIT_ACME: "true"

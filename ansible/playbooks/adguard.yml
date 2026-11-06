@@ -1,0 +1,54 @@
+---
+# adguard_user/adguard_password come from OpenBao (secret/adguard) via the
+# adguard-kv AppRole, not group_vars/secrets.yml - see
+# scripts/openbao_setup_policies.py. role_id/secret_id come from
+# ansible/.vault_secret_ids.yml (not committed).
+- name: Deploy AdGuard Home
+  # Both Proxmox instances get the same upstreams + rewrites (2026-10-04:
+  # the secondary had been left unmanaged and was missing rewrites, so a
+  # VIP failover would have broken internal names). The k3s-worker1-mini third
+  # instance (10.20.1.120) isn't in the inventory yet.
+  hosts: adguard.example.lab,adguard-secondary.example.lab
+  become: true
+  vars_files:
+    - ../.vault_secret_ids.yml
+  vars:
+    ansible_hashi_vault_auth_method: approle
+    ansible_hashi_vault_addr: "http://10.20.30.22:8200"
+    _adguard_vault_secret: >-
+      {{ lookup('community.hashi_vault.vault_kv2_get', 'adguard',
+         role_id=vars['adguard_role_id'], secret_id=vars['adguard_secret_id']).secret }}
+    adguard_user: "{{ _adguard_vault_secret.adguard_user }}"
+    adguard_password: "{{ _adguard_vault_secret.adguard_password }}"
+
+  pre_tasks:
+    - name: Confirm required secrets are defined
+      assert:
+        that:
+          - adguard_user is defined
+          - adguard_password is defined
+        fail_msg: "adguard_user and adguard_password must come from OpenBao (secret/adguard)"
+
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - dnsutils        # for dig in verify step
+        state: present
+
+  roles:
+    - adguard
+
+  post_tasks:
+    - name: Print AdGuard Home access info
+      debug:
+        msg:
+          - "AdGuard Home is live at http://{{ ansible_host }}"
+          - "DNS is serving on {{ ansible_host }}:53"
+          - "Next step: run adguard_cutover.yml to point Unifi DHCP at AdGuard"

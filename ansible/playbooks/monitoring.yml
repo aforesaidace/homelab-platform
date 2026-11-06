@@ -1,0 +1,87 @@
+---
+- name: Configure monitoring stack
+  hosts: monitoring
+  become: true
+  gather_facts: true
+  # All secrets from OpenBao, each lookup with its own AppRole's
+  # role_id/secret_id from the gitignored .vault_secret_ids.yml (no
+  # secrets.yml since 2026-10-01, and no ANSIBLE_HASHI_VAULT_SECRET_ID env -
+  # alertmanager and pve_exporter used different AppRoles through that one
+  # env var, so a full run could never satisfy both).
+  vars_files:
+    - ../.vault_secret_ids.yml
+  vars:
+    ansible_hashi_vault_auth_method: approle
+    ansible_hashi_vault_addr: "http://10.20.30.22:8200"
+  roles:
+    - role: common
+      tags: [common]
+    - role: node_exporter
+      tags: [node_exporter]
+    - role: alloy
+      tags: [alloy]
+    - role: prometheus
+      when: "'prometheus' in inventory_hostname"
+      tags: [prometheus]
+      vars:
+        # Phase 3(b), docs/todo.md Initiative 1 - the Nautobot file_sd
+        # sync reuses the drift-check-kv AppRole wholesale (same read-only
+        # scope already needed: view-only on virtualization.virtualmachine),
+        # not a new dedicated AppRole - two homelab-internal read-only
+        # reconciliation consumers sharing one narrow credential is a
+        # reasonable call, unlike a real security-boundary difference.
+        prometheus_nautobot_sd_role_id: "{{ vars['drift-check_role_id'] }}"
+        prometheus_nautobot_sd_secret_id: "{{ vars['drift-check_secret_id'] }}"
+        # netalertx's /metrics requires a bearer token (app_server_start.py
+        # denies every request without one) - passed as a query-string
+        # ?token= param instead of an Authorization header since the
+        # generic scrape-target template loop already supports `params`
+        # but not a header/authorization block. Kept out of
+        # group_vars/monitoring.yml (git-committed) entirely - injected
+        # only here, at render time, from secret/netalertx.
+        prometheus_netalertx_api_token: >-
+          {{ lookup('community.hashi_vault.vault_kv2_get', 'netalertx',
+          role_id=vars['netalertx_role_id'], secret_id=vars['netalertx_secret_id']).secret.api_token }}
+    - role: loki
+      when: "'loki' in inventory_hostname"
+      tags: [loki]
+    - role: grafana
+      when: "'grafana' in inventory_hostname"
+      tags: [grafana]
+      vars:
+        _grafana_vault_secret: >-
+          {{ lookup('community.hashi_vault.vault_kv2_get', 'grafana',
+             role_id=vars['grafana_role_id'], secret_id=vars['grafana_secret_id']).secret }}
+        # User #1 (the original admin) was renamed to ops when SSO was set up;
+        # grafana-cli's reset-admin-password resets user #1, i.e. ops.
+        grafana_admin_user: ops
+        grafana_admin_password: "{{ _grafana_vault_secret.grafana_admin_password }}"
+        # Must come from OpenBao: the role default is Grafana's public sample
+        # key, and changing it breaks Grafana's encrypted stored secrets.
+        grafana_secret_key: "{{ _grafana_vault_secret.grafana_secret_key }}"
+        grafana_oauth_client_secret: "{{ _grafana_vault_secret.grafana_oauth_client_secret }}"
+        # Authentik OAuth client ID - public (it's in every login URL), so
+        # committed here rather than in OpenBao.
+        grafana_oauth_client_id: "EXAMPLE_PUBLIC_CLIENT_ID"
+    - role: alertmanager
+      when: "'alertmanager' in inventory_hostname"
+      tags: [alertmanager]
+      vars:
+        alertmanager_discord_webhook_url: >-
+          {{ lookup('community.hashi_vault.vault_kv2_get', 'alertmanager',
+             role_id=vars['alertmanager_role_id'], secret_id=vars['alertmanager_secret_id']).secret.discord_webhook_url }}
+        # Critical-alert phone push via HA (10.20.1.93, Internal zone -
+        # reachable from VLAN 30). Webhook id from the same KV path.
+        alertmanager_ha_webhook_url: >-
+          http://10.20.1.93:8123/api/webhook/{{ lookup('community.hashi_vault.vault_kv2_get', 'alertmanager',
+             role_id=vars['alertmanager_role_id'], secret_id=vars['alertmanager_secret_id']).secret.ha_webhook_id }}
+        # Critical-alert push via the local ntfy (same host, publisher user).
+        alertmanager_ntfy_password: >-
+          {{ lookup('community.hashi_vault.vault_kv2_get', 'alertmanager',
+             role_id=vars['alertmanager_role_id'], secret_id=vars['alertmanager_secret_id']).secret.ntfy_publisher_password | default('') }}
+    # ntfy (self-hosted push) on the alertmanager LXC; LAN only. Passwords
+    # from the same KV path (written by scripts/ntfy_setup_secrets.py);
+    # without them the role still installs ntfy with deny-all access.
+    # pve_exporter: built 2026-09-01 after a real PBS-storage outage (see
+    # docs/todo.md) went 2+ days with zero alerting. Own AppRole/KV path
+    # (pve_exporter-kv, secret/pve_exporter), not reusing alertmanager's.

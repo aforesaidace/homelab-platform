@@ -1,0 +1,26 @@
+---
+# K3s role defaults — see group_vars/k3s.yml for overrides
+
+k3s_install_url: "https://get.k3s.io"
+
+# Flags applied to K3s server (CP) nodes.
+# Flannel host-gw: all nodes on same L2 (VLAN 30), no encapsulation needed
+# kube-router: embedded in K3s, handles NetworkPolicy — don't pass --disable-network-policy
+# --disable=traefik: we install nginx-ingress manually via MetalLB
+# --disable=servicelb: we use MetalLB instead of K3s's built-in LB
+# --kubelet-arg=feature-gates=KubeletInUserNamespace=true: needed for unpriv LXCs
+# --kube-proxy-arg=conntrack-max-per-core=0: /proc/sys/net/netfilter/nf_conntrack_max
+#   is read-only in non-init netns (unprivileged LXC), so disable conntrack accounting
+k3s_server_flags: >-
+  --flannel-backend=host-gw
+  --disable=traefik
+  --disable=servicelb
+  --kubelet-arg=feature-gates=KubeletInUserNamespace=true
+  --kube-proxy-arg=conntrack-max-per-core=0
+
+# Override via group_vars/host_vars per-node
+k3s_node_ip: "{{ ansible_default_ipv4.address }}"
+k3s_node_type: agent  # 'server' for CP nodes, 'agent' for workers
+k3s_cp_first: false   # true only for the first CP (gets --cluster-init)
+k3s_server_url: ""    # set to https://<first-cp-ip>:6443 for joining nodes
+k3s_token: ""         # set via playbook after fetching from first CP

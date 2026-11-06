@@ -1,0 +1,33 @@
+---
+- name: Install keepalived and dnsutils (for the health check's dig)
+  ansible.builtin.apt:
+    name:
+      - keepalived
+      - dnsutils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Deploy AdGuard health check script
+  ansible.builtin.template:
+    src: check_adguard.sh.j2
+    dest: /usr/local/bin/check_adguard.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy keepalived config
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: root
+    group: root
+    mode: '0640'
+  notify: Restart keepalived
+
+- name: Enable and start keepalived
+  ansible.builtin.systemd:
+    name: keepalived
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -1,0 +1,36 @@
+---
+prometheus_version: "2.52.0"
+prometheus_port: 9090
+prometheus_user: prometheus
+prometheus_group: prometheus
+prometheus_uid: 990
+prometheus_gid: 990
+prometheus_data_dir: /var/lib/prometheus
+prometheus_config_dir: /etc/prometheus
+prometheus_install_dir: /usr/local/bin
+prometheus_storage_retention: "30d"
+prometheus_storage_retention_size: "0"
+prometheus_log_level: "info"
+prometheus_scrape_interval: "60s"
+prometheus_evaluation_interval: "60s"
+prometheus_scrape_timeout: "10s"
+prometheus_scrape_targets: []
+prometheus_alertmanager_target: "10.20.30.43:9093"
+
+# The `node` job's targets come only from Nautobot (scripts/
+# nautobot_prometheus_sd.py, every 5 min). Credential is a reuse of the
+# drift-check-kv AppRole (read-only Nautobot user) - see
+# ansible/playbooks/monitoring.yml.
+prometheus_nautobot_sd_dir: /etc/prometheus/nautobot_sd
+prometheus_nautobot_sd_output: /etc/prometheus/file_sd/nautobot_vms.json
+prometheus_nautobot_sd_openbao_addr: http://10.20.30.22:8200
+prometheus_nautobot_sd_interval: "*:0/5"  # every 5 min - matches the original NetBox-era http_sd design's "next 5-min refresh" intent
+# Example structure for prometheus_scrape_targets:
+# prometheus_scrape_targets:
+#   - job_name: node
+#     static_configs:
+#       - targets:
+#           - 10.0.30.10:9100
+#           - 10.0.30.11:9100
+#     labels:
+#       env: homelab

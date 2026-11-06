@@ -1,0 +1,35 @@
+---
+node_exporter_version: "1.8.1"
+node_exporter_port: 9100
+node_exporter_user: node_exporter
+node_exporter_group: node_exporter
+node_exporter_uid: 993
+node_exporter_gid: 993
+node_exporter_install_dir: /usr/local/bin
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile
+node_exporter_enabled_collectors:
+  - systemd
+  - processes
+  - filesystem
+  - diskstats
+  - meminfo
+  - netdev
+  - stat
+  - time
+  - uname
+node_exporter_disabled_collectors: []
+node_exporter_log_level: "info"
+
+# Maps ansible_architecture (uname -m style) to node_exporter's GitHub
+# release asset naming (Go GOARCH style) - found live 2026-09-01 running
+# this role against the Raspberry Pi fleet for the first time (previously
+# only ever run against this fleet's x86_64 LXCs/VMs, so the hardcoded
+# "linux-amd64" archive name had never been exercised on ARM). Installing
+# an amd64 binary on aarch64 fails at exec time (systemd exit 203/EXEC),
+# not at download/install time, so it looked "deployed" until the service
+# actually tried to start.
+node_exporter_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+  armv7l: armv7
+  armv6l: armv6

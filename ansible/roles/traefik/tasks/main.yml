@@ -1,0 +1,8 @@
+---
+- name: Include Docker install tasks
+  ansible.builtin.import_tasks: docker.yml
+  tags: [install, docker]
+
+- name: Include server tasks
+  ansible.builtin.import_tasks: server.yml
+  tags: [configure]

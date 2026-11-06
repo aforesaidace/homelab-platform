@@ -1,0 +1,86 @@
+---
+# The apt package already creates the alloy system user - this only adds
+# the group memberships it needs to actually read journald/Docker, same
+# requirement Promtail had (see ansible/roles/promtail/tasks/user.yml).
+- name: Add alloy user to systemd-journal and adm groups
+  ansible.builtin.user:
+    name: "{{ alloy_user }}"
+    groups:
+      - systemd-journal
+      - adm
+    append: true
+  notify: Restart alloy
+
+- name: Check if docker group exists
+  ansible.builtin.command: getent group docker
+  register: _alloy_docker_group_check
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only; otherwise --check treats every host as a Docker host
+
+- name: Add alloy user to docker group (Docker hosts only)
+  ansible.builtin.user:
+    name: "{{ alloy_user }}"
+    groups:
+      - docker
+    append: true
+  when: _alloy_docker_group_check.rc == 0
+  notify: Restart alloy
+
+# pveproxy's access.log is 640 www-data:www-data - group membership works.
+- name: Add alloy user to www-data group (Proxmox nodes only)
+  ansible.builtin.user:
+    name: "{{ alloy_user }}"
+    groups:
+      - www-data
+    append: true
+  when: alloy_scrape_proxmox_logs
+  notify: Restart alloy
+
+# Every file under /var/log/pve/tasks/ is 640 www-data:root - the GROUP
+# here is root, not www-data (confirmed live 2026-08-21, don't assume it
+# matches pveproxy's own ownership). Adding alloy to the root group to
+# fix this would be a real privilege overreach for a log shipper - a
+# POSIX ACL grants read access to exactly this one path instead. -R for
+# files that already exist, -d (default) so files PVE creates going
+# forward inherit it automatically too.
+- name: Grant alloy read ACL on existing PVE task log files (Proxmox nodes only)
+  ansible.builtin.command:
+    cmd: "setfacl -R -m g:{{ alloy_group }}:rX /var/log/pve/tasks/"
+  when: alloy_scrape_proxmox_logs
+  changed_when: true
+  notify: Restart alloy
+
+- name: Grant alloy default read ACL for future PVE task log files (Proxmox nodes only)
+  ansible.builtin.command:
+    cmd: "setfacl -R -d -m g:{{ alloy_group }}:rX /var/log/pve/tasks/"
+  when: alloy_scrape_proxmox_logs
+  changed_when: true
+  notify: Restart alloy
+
+# Every instance directory under /home/amp/.ampdata/instances/ is 700
+# amp:amp - everything underneath (AMP_Logs/, the game's own log dir tree)
+# is already 755, confirmed live 2026-09-20, so the top-level instance dir
+# is the only actual traversal blocker. Same fix Promtail needed for this
+# same reason before the Alloy migration (docs/vms-lxcs.md) - group
+# membership plus relaxing just these 4 dirs, not a recursive chmod.
+- name: Add alloy user to amp group (amp host only)
+  ansible.builtin.user:
+    name: "{{ alloy_user }}"
+    groups:
+      - amp
+    append: true
+  when: alloy_scrape_amp_logs
+  notify: Restart alloy
+
+- name: Relax AMP instance directories to 750 so alloy can traverse (amp host only)
+  ansible.builtin.file:
+    path: "/home/amp/.ampdata/instances/{{ item }}"
+    mode: "0750"
+  loop:
+    - ADS01
+    - example01
+    - PalworldModded01
+    - Enshrouded01
+  when: alloy_scrape_amp_logs
+  notify: Restart alloy

@@ -1,0 +1,93 @@
+# Managed by Ansible — do not edit manually
+# Role: grafana
+
+[paths]
+data = {{ grafana_data_dir }}
+logs = {{ grafana_logs_dir }}
+plugins = {{ grafana_data_dir }}/plugins
+provisioning = {{ grafana_provisioning_dir }}
+
+[server]
+protocol = http
+http_addr = 0.0.0.0
+http_port = {{ grafana_port }}
+domain = {{ grafana_domain }}
+enforce_domain = false
+root_url = {{ grafana_root_url }}
+serve_from_sub_path = {{ grafana_serve_from_sub_path | lower }}
+
+[database]
+type = {{ grafana_database_type }}
+path = {{ grafana_database_path }}
+
+[security]
+admin_user = {{ grafana_admin_user }}
+admin_password = {{ grafana_admin_password }}
+secret_key = {{ grafana_secret_key }}
+disable_gravatar = {{ grafana_disable_gravatar | lower }}
+cookie_secure = {{ grafana_cookie_secure | lower }}
+cookie_samesite = {{ grafana_cookie_samesite }}
+
+[users]
+allow_sign_up = {{ grafana_allow_sign_up | lower }}
+allow_org_create = {{ grafana_allow_org_create | lower }}
+auto_assign_org = true
+auto_assign_org_role = Viewer
+
+[auth]
+disable_login_form = false
+
+[auth.generic_oauth]
+name = Authentik
+enabled = true
+client_id = {{ grafana_oauth_client_id }}
+client_secret = {{ grafana_oauth_client_secret }}
+scopes = openid profile email groups
+auth_url = https://authentik.example.lab/application/o/authorize/
+token_url = https://authentik.example.lab/application/o/token/
+api_url = https://authentik.example.lab/application/o/userinfo/
+allow_sign_up = true
+role_attribute_path = contains(groups, 'homelab-admins') && 'Admin' || contains(groups, 'homelab-users') && 'Editor' || 'Viewer'
+role_attribute_strict = false
+
+[auth.anonymous]
+enabled = false
+
+[log]
+mode = {{ grafana_log_mode }}
+level = {{ grafana_log_level }}
+
+[log.file]
+log_rotate = true
+max_lines = 1000000
+max_size_shift = 28
+daily_rotate = true
+max_days = 7
+
+[alerting]
+enabled = false
+
+[unified_alerting]
+enabled = true
+execute_alerts = true
+
+[analytics]
+reporting_enabled = {{ grafana_reporting_enabled | lower }}
+check_for_updates = {{ grafana_check_for_updates | lower }}
+check_for_plugin_updates = {{ grafana_check_for_plugin_updates | lower }}
+
+[smtp]
+enabled = {{ grafana_smtp_enabled | lower }}
+{% if grafana_smtp_enabled %}
+host = {{ grafana_smtp_host }}
+user = {{ grafana_smtp_user }}
+password = {{ grafana_smtp_password }}
+from_address = {{ grafana_smtp_from_address }}
+from_name = {{ grafana_smtp_from_name }}
+{% endif %}
+
+[snapshots]
+external_enabled = false
+
+[dashboards]
+default_home_dashboard_path =

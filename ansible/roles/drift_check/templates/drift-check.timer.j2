@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly doc-vs-infra drift reconciliation
+
+[Timer]
+OnCalendar={{ drift_check_schedule }}
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

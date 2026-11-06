@@ -1,0 +1,11 @@
+---
+- name: Install AdGuard Home
+  import_tasks: install.yml
+
+- name: Configure AdGuard Home (upstreams + DNS rewrites)
+  import_tasks: configure.yml
+
+# Opt-in only - see reset_password.yml's own header comment.
+- name: Reset AdGuard Home admin password (run with --tags password_reset)
+  import_tasks: reset_password.yml
+  tags: [password_reset, never]

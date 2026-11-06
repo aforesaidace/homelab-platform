@@ -1,0 +1,33 @@
+# Managed by Ansible — do not edit manually
+# Role: prometheus
+
+[Unit]
+Description=Prometheus Monitoring System
+Documentation=https://prometheus.io/docs/introduction/overview/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ prometheus_user }}
+Group={{ prometheus_group }}
+ExecStart={{ prometheus_install_dir }}/prometheus \
+  --config.file={{ prometheus_config_dir }}/prometheus.yml \
+  --storage.tsdb.path={{ prometheus_data_dir }} \
+  --storage.tsdb.retention.time={{ prometheus_storage_retention }} \
+{% if prometheus_storage_retention_size != "0" %}
+  --storage.tsdb.retention.size={{ prometheus_storage_retention_size }} \
+{% endif %}
+  --web.listen-address=0.0.0.0:{{ prometheus_port }} \
+  --web.console.templates={{ prometheus_config_dir }}/consoles \
+  --web.console.libraries={{ prometheus_config_dir }}/console_libraries \
+  --web.enable-lifecycle \
+  --log.level={{ prometheus_log_level }}
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+SendSIGKILL=no
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

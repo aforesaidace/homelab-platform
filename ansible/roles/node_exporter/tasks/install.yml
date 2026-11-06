@@ -1,0 +1,54 @@
+---
+- name: Set node_exporter archive name
+  ansible.builtin.set_fact:
+    node_exporter_archive: >-
+      node_exporter-{{ node_exporter_version }}.linux-{{
+      node_exporter_arch_map[ansible_architecture] }}
+  tags: [install]
+
+- name: Check if node_exporter binary already exists at correct version
+  ansible.builtin.command:
+    cmd: "{{ node_exporter_install_dir }}/node_exporter --version"
+  register: node_exporter_installed_version
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only; without this --check always "downloads" then fails to extract
+  tags: [install]
+
+- name: Download node_exporter archive from GitHub releases
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/{{ node_exporter_archive }}.tar.gz"
+    dest: "/tmp/{{ node_exporter_archive }}.tar.gz"
+    mode: '0644'
+    timeout: 60
+  when: node_exporter_version not in ((node_exporter_installed_version.stdout | default('')) ~ (node_exporter_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Extract node_exporter archive
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ node_exporter_archive }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+  when: node_exporter_version not in ((node_exporter_installed_version.stdout | default('')) ~ (node_exporter_installed_version.stderr | default('')))
+  tags: [install]
+
+- name: Install node_exporter binary
+  ansible.builtin.copy:
+    src: "/tmp/{{ node_exporter_archive }}/node_exporter"
+    dest: "{{ node_exporter_install_dir }}/node_exporter"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  when: node_exporter_version not in ((node_exporter_installed_version.stdout | default('')) ~ (node_exporter_installed_version.stderr | default('')))
+  notify: Restart node_exporter
+  tags: [install]
+
+- name: Clean up temp files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/{{ node_exporter_archive }}.tar.gz"
+    - "/tmp/{{ node_exporter_archive }}"
+  tags: [install]

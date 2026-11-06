@@ -1,0 +1,7 @@
+---
+- name: Apply common role to all managed hosts
+  hosts: all_services:proxmox_nodes
+  become: true
+  roles:
+    - role: common
+      tags: [common]

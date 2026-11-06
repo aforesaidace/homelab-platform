@@ -1,0 +1,21 @@
+---
+# Site-wide defaults
+common_ops_user: ops
+common_timezone: "America/Chicago"
+# Proxmox's default (80%) causes its automatic ballooning algorithm to
+# proactively hand memory to any VM with a balloon floor/ceiling gap,
+# regardless of whether the guest needs it - see Known Issue #62.
+proxmox_ballooning_target: 60
+# Key for tasks that need root on the Proxmox nodes themselves (LXC config
+# edits in /etc/pve/lxc/), set per task with `ansible_user: root` - the
+# `ansible` user has no root there (Known Issue #21). Defined once so a
+# lost/rotated key is one edit: the personal rober_ed25519 key these tasks
+# used to name went in the 2026-09-29 workstation wipe and broke every one of them.
+proxmox_root_ssh_key: "~/.ssh/ansible_ed25519"
+
+# node_exporter
+node_exporter_version: "1.8.1"
+node_exporter_port: 9100
+
+# alloy
+loki_url: "http://10.20.30.13:3100"

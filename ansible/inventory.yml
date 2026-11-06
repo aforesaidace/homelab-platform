@@ -1,0 +1,112 @@
+---
+# Example inventory: the core hosts from the real fleet (about 70
+# hosts), trimmed to the ones the roles and playbooks here use.
+all:
+  vars:
+    ansible_ssh_private_key_file: ~/.ssh/ansible_ed25519
+    ansible_ssh_common_args: -o StrictHostKeyChecking=no
+  children:
+    proxmox_nodes:
+      vars:
+        ansible_user: ansible
+        ansible_become: false
+      hosts:
+        pve1.example.lab:
+          ansible_host: 10.20.1.70
+        pve2.example.lab:
+          ansible_host: 10.20.1.60
+    lxc:
+      vars:
+        ansible_user: ansible
+        ansible_become: true
+      hosts:
+        prometheus.example.lab:
+          ansible_host: 10.20.30.12
+        loki.example.lab:
+          ansible_host: 10.20.30.13
+        grafana.example.lab:
+          ansible_host: 10.20.30.14
+        adguard.example.lab:
+          ansible_host: 10.20.1.5
+        adguard-secondary.example.lab:
+          ansible_host: 10.20.1.9
+        n8n.example.lab:
+          ansible_host: 10.20.30.20
+        openbao.example.lab:
+          ansible_host: 10.20.30.22
+        openbao-seal.example.lab:
+          ansible_host: 10.20.30.23
+        k3s-cp1.example.lab:
+          ansible_host: 10.20.30.24
+        k3s-cp2.example.lab:
+          ansible_host: 10.20.30.25
+        k3s-cp3.example.lab:
+          ansible_host: 10.20.30.26
+        k3s-worker1.example.lab:
+          ansible_host: 10.20.30.27
+        k3s-worker2.example.lab:
+          ansible_host: 10.20.30.28
+        k3s-gpu1.example.lab:
+          ansible_host: 10.20.30.29
+        authentik.example.lab:
+          ansible_host: 10.20.30.38
+        alertmanager.example.lab:
+          ansible_host: 10.20.30.43
+        traefik.example.lab:
+          ansible_host: 10.20.30.46
+        step-ca.example.lab:
+          ansible_host: 10.20.30.47
+    docker_update_targets:
+      hosts:
+        prometheus.example.lab:
+          ansible_host: 10.20.30.12
+        n8n.example.lab:
+          ansible_host: 10.20.30.20
+        openbao.example.lab:
+          ansible_host: 10.20.30.22
+        authentik.example.lab:
+          ansible_host: 10.20.30.38
+        openbao-seal.example.lab:
+          ansible_host: 10.20.30.23
+        traefik.example.lab:
+          ansible_host: 10.20.30.46
+        step-ca.example.lab:
+          ansible_host: 10.20.30.47
+    monitoring:
+      hosts:
+        prometheus.example.lab:
+          ansible_host: 10.20.30.12
+        loki.example.lab:
+          ansible_host: 10.20.30.13
+        grafana.example.lab:
+          ansible_host: 10.20.30.14
+        alertmanager.example.lab:
+          ansible_host: 10.20.30.43
+    dns:
+      hosts:
+        adguard.example.lab:
+          ansible_host: 10.20.1.5
+    openbao:
+      hosts:
+        openbao.example.lab:
+          ansible_host: 10.20.30.22
+    openbao_seal:
+      hosts:
+        openbao-seal.example.lab:
+          ansible_host: 10.20.30.23
+    k3s_cp:
+      hosts:
+        k3s-cp1.example.lab:
+          ansible_host: 10.20.30.24
+        k3s-cp2.example.lab:
+          ansible_host: 10.20.30.25
+        k3s-cp3.example.lab:
+          ansible_host: 10.20.30.26
+    k3s_workers:
+      hosts:
+        k3s-worker1.example.lab:
+          ansible_host: 10.20.30.27
+        k3s-worker2.example.lab:
+          ansible_host: 10.20.30.28
+        k3s-gpu1.example.lab:
+          ansible_host: 10.20.30.29

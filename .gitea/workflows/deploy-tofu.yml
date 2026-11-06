@@ -1,0 +1,52 @@
+name: Deploy Terraform (OpenTofu)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Terraform target (e.g. module.arr). Leave blank for full apply."
+        required: false
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write real Proxmox SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ANSIBLE_SSH_KEY }}" > ~/.ssh/ansible_ed25519
+          chmod 600 ~/.ssh/ansible_ed25519
+
+      - name: Write tofu's own vault AppRole creds
+        run: |
+          echo "${{ secrets.TOFU_KV_VARS }}" | base64 -d > tofu/vault_secret_ids.auto.tfvars
+
+      - name: tofu init
+        run: |
+          cd tofu
+          # Migrated from a local-path backend (Known Issue #53) to the
+          # dedicated tofu-state Postgres instance 2026-09-02 - see
+          # docs/todo.md "OpenTofu state durability". Real locking now
+          # (was the deeper motivation, not just this runner-persistence
+          # workaround) plus PBS backup coverage on the new LXC, instead
+          # of an unreplicated file on the runner's own disk.
+          tofu init -backend-config="conn_str=${{ secrets.TOFU_STATE_PG_CONN_STR }}"
+
+      - name: tofu plan and apply
+        run: |
+          cd tofu
+          if [ -n "${{ inputs.target }}" ]; then
+            tofu plan -target="${{ inputs.target }}" -out=deploy.tfplan
+          else
+            tofu plan -out=deploy.tfplan
+          fi
+          tofu apply deploy.tfplan
+
+      - name: Clean up real credentials from runner workspace
+        if: always()
+        run: |
+          rm -f ~/.ssh/ansible_ed25519
+          rm -f tofu/vault_secret_ids.auto.tfvars

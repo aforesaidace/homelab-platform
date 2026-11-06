@@ -1,0 +1,20 @@
+# Managed by Ansible — do not edit manually
+# Role: grafana
+# Purpose: Disable systemd security restrictions that are incompatible
+#          with unprivileged LXC containers on Proxmox.
+
+[Service]
+PrivateTmp=no
+PrivateDevices=no
+PrivateNetwork=no
+ProtectSystem=no
+ProtectHome=no
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectControlGroups=no
+NoNewPrivileges=no
+RestrictNamespaces=no
+LockPersonality=no
+MemoryDenyWriteExecute=no
+RestrictRealtime=no
+SystemCallFilter=

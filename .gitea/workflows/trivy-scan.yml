@@ -1,0 +1,33 @@
+name: Trivy fleet vulnerability scan
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Monday 06:00 UTC - weekly, off-peak
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write SSH key
+        # ansible/inventory.yml's own ansible_ssh_private_key_file already
+        # points at this exact path - no ssh_config override needed, same
+        # as deploy-arr.yml's convention.
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ANSIBLE_SSH_KEY }}" > ~/.ssh/ansible_ed25519
+          chmod 600 ~/.ssh/ansible_ed25519
+
+      - name: Install Ansible + Trivy
+        run: |
+          python3 -m pip install --quiet ansible
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Run fleet-wide Trivy sweep
+        run: python3 scripts/trivy_sweep.py --severity HIGH,CRITICAL
+
+      - name: Clean up SSH key from runner workspace
+        if: always()
+        run: rm -f ~/.ssh/ansible_ed25519

@@ -1,0 +1,47 @@
+#!/bin/bash
+# Managed by Ansible — ansible/roles/drift_check/
+# Weekly: refresh the repo checkout, pull creds from OpenBao (drift-check-kv
+# AppRole, read-only), run the doc-vs-infra reconciler, and if it reports
+# drift POST the JSON to the n8n "Doc Drift Check" webhook (which formats it
+# and posts to Discord with a pre-filled tracking-issue link).
+set -uo pipefail
+
+REPO="{{ drift_check_repo }}"
+BAO="{{ drift_check_openbao_addr }}"
+ROLE_ID="{{ drift_check_role_id }}"
+SECRET_ID="$(cat {{ drift_check_dir }}/secret_id)"
+WEBHOOK="{{ drift_check_webhook }}"
+
+vault_get() {  # $1 = secret path, prints "key\tvalue" lines
+  curl -fsS -m 10 -H "X-Vault-Token: $VT" "$BAO/v1/secret/data/$1" \
+    | python3 -c 'import sys,json;[print(f"{k}\t{v}") for k,v in json.load(sys.stdin)["data"]["data"].items()]'
+}
+
+VT="$(curl -fsS -m 10 -X POST "$BAO/v1/auth/approle/login" \
+       -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" \
+     | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth"]["client_token"])')"
+[ -z "$VT" ] && { echo "drift_check: OpenBao login failed"; exit 2; }
+
+declare -A S
+while IFS=$'\t' read -r k v; do S[$k]="$v"; done < <(vault_get proxmox; vault_get homepage; vault_get drift-check)
+
+export PVE_API_URL="https://10.20.1.70:8006/api2/json"
+export PVE_TOKEN="${S[proxmox2netbox_token_id]}=${S[proxmox2netbox_token_secret]}"
+export NPM_EMAIL="${S[homepage_npm_email]}"
+export NPM_PASSWORD="${S[homepage_npm_password]}"
+export NAUTOBOT_API_TOKEN="${S[nautobot_api_token]}"
+
+git -C "$REPO" pull --quiet --ff-only 2>/dev/null || true
+OUT="$(cd "$REPO" && python3 scripts/drift_check.py --json 2>&1)"
+RC=$?
+
+if [ "$RC" -eq 0 ]; then
+  echo "drift_check: clean"
+  exit 0
+fi
+
+echo "drift_check: drift or error (rc=$RC), notifying"
+echo "$OUT"
+curl -fsS -m 15 -X POST -H 'Content-Type: application/json' \
+  --data-binary "$OUT" "$WEBHOOK" >/dev/null \
+  || echo "drift_check: webhook POST failed"

@@ -1,0 +1,219 @@
+---
+# Upstream DNS resolvers (Cloudflare + Quad9 as fallback)
+adguard_upstreams:
+  - "https://dns.cloudflare.com/dns-query"
+  - "https://dns10.quad9.net/dns-query"
+
+adguard_bootstrap_dns:
+  - "1.1.1.1"
+  - "9.9.9.9"
+
+# arr (10.20.40.20) runs ~11 Docker containers that all share its host IP
+# as seen by AdGuard, so their periodic RSS-sync/health-check timers landing
+# in the same second routinely burst past the default 20 qps limit - AdGuard
+# silently drops (not logs) anything over the limit, surfacing as Docker
+# embedded-resolver "i/o timeout" errors for real lookups (Plex discovery,
+# Newshosting). Confirmed via AdGuard's own query log: repeated exact-20-in-
+# 1-second windows from 10.20.40.20 at the same moments Docker reported
+# timeouts.
+#
+# Tried ratelimit_whitelist first (per-client exemption, narrower blast
+# radius) but it had no measurable effect even after a service restart -
+# likely a subnet-vs-IP matching quirk, since ratelimit_subnet_len_ipv4=24
+# buckets clients by /24, not by individual IP. Raising the global limit
+# instead - each VLAN's /24 gets its own independent bucket under this
+# setting, so this only meaningfully changes behavior for VLAN 40 (arr's
+# subnet), not the rest of the network. Verified live 2026-08-16: bursts
+# and timeouts stopped after this change, whitelist attempt did not fix it.
+adguard_ratelimit: 60
+# The whitelist entry for the old arr LXC (10.20.40.20) was removed
+# 2026-08-25 - it never did anything even before the 2026-08-21 split
+# (see the comment above: the actual fix was the global limit, not this),
+# and none of the three post-split hosts run anywhere near the ~11
+# containers-on-one-IP density that caused the original burst issue.
+# Caught by scripts/check_stale_ip_refs.py, see Known Issue #124's
+# follow-up in docs/todo.md.
+adguard_ratelimit_whitelist: []
+
+# All example.lab DNS rewrites
+# NPM (10.20.30.11) handles proxied web services
+# Direct IPs for infrastructure/management hosts
+adguard_rewrites:
+  # Physical hosts
+  - domain: "pve1.example.lab"
+    answer: "10.20.1.70"
+  - domain: "pve2.example.lab"
+    answer: "10.20.1.60"
+
+  # Management / default VLAN
+  - domain: "adguard.example.lab"
+    answer: "10.20.1.5"
+
+  # VLAN 1 — Default (physical appliances)
+  - domain: "homeassistant.example.lab"
+    answer: "10.20.30.11"
+
+  # VLAN 10 — Management
+  - domain: "pbs.example.lab"
+    answer: "10.20.10.20"
+
+  # VLAN 30 — Services (via NPM reverse proxy)
+  - domain: "npm.example.lab"
+    answer: "10.20.30.11"
+  - domain: "grafana.example.lab"
+    answer: "10.20.30.11"
+  - domain: "uptime.example.lab"
+    answer: "10.20.30.11"
+  - domain: "ai.example.lab"
+    answer: "10.20.30.11"
+  - domain: "homepage.example.lab"
+    answer: "10.20.30.11"
+  - domain: "n8n.example.lab"
+    answer: "10.20.30.11"
+  - domain: "patchmon.example.lab"
+    answer: "10.20.30.11"
+  - domain: "openbao.example.lab"
+    answer: "10.20.30.11"
+  - domain: "argocd.example.lab"
+    answer: "10.20.30.11"
+  - domain: "nextcloud.example.lab"
+    answer: "10.20.30.11"
+  - domain: "jenkins.example.lab"
+    answer: "10.20.30.11"
+
+  # VLAN 30 — Direct (not behind NPM)
+  - domain: "prometheus.example.lab"
+    answer: "10.20.30.12"
+  - domain: "loki.example.lab"
+    answer: "10.20.30.13"
+  - domain: "alertmanager.example.lab"
+    answer: "10.20.30.43"
+  - domain: "ollama.example.lab"
+    answer: "10.20.30.19"
+
+  # VLAN 20 — Game servers (via NPM)
+  - domain: "amp.example.lab"
+    answer: "10.20.30.11"
+  - domain: "git.example.lab"
+    answer: "10.20.30.11"
+
+  # VLAN 40 - Media
+  - domain: "nas.example.lab"
+    answer: "10.20.40.10"
+  - domain: "sonarr.example.lab"
+    answer: "10.20.30.11"
+  - domain: "radarr.example.lab"
+    answer: "10.20.30.11"
+  - domain: "bazarr.example.lab"
+    answer: "10.20.30.11"
+  - domain: "prowlarr.example.lab"
+    answer: "10.20.30.11"
+  - domain: "lidarr.example.lab"
+    answer: "10.20.30.11"
+  - domain: "nzbget.example.lab"
+    answer: "10.20.30.11"
+  - domain: "qbittorrent.example.lab"
+    answer: "10.20.30.11"
+  - domain: "plex.example.lab"
+    answer: "10.20.30.11"
+  - domain: "jellyfin.example.lab"
+    answer: "10.20.30.11"
+  - domain: "tdarr.example.lab"
+    answer: "10.20.30.11"
+  - domain: "seerr.example.lab"
+    answer: "10.20.30.11"
+  - domain: "headscale.example.lab"
+    answer: "10.20.30.11"
+  - domain: "actual.example.lab"
+    answer: "10.20.30.11"
+  - domain: "paperless.example.lab"
+    answer: "10.20.30.11"
+  - domain: "audiobooks.example.lab"
+    answer: "10.20.30.11"
+  # AudioBookRequest web UI (audiobook Phase 3), co-located on the ABS LXC,
+  # proxied by NPM. Added 2026-09-06.
+  - domain: "books.example.lab"
+    answer: "10.20.30.11"
+  - domain: "dashy.example.lab"
+    answer: "10.20.30.11"
+  - domain: "authentik.example.lab"
+    answer: "10.20.30.11"
+  - domain: "termix.example.lab"
+    answer: "10.20.30.11"
+  # Nautobot - NetBox replacement (SoT tool decided 2026-09-09, Phase 1
+  # live 2026-09-11). NetBox itself decommissioned 2026-09-13 (Phase 4) -
+  # its rewrite removed to match.
+  - domain: "nautobot.example.lab"
+    answer: "10.20.30.11"
+  - domain: "freshrss.example.lab"
+    answer: "10.20.30.11"
+  # Direct to the FreeIPA VM's own IP, NOT NPM - unlike every web app
+  # above, Kerberos/LDAP need the hostname to resolve to the actual
+  # server directly (ipa-server-install itself validates this), not a
+  # reverse-proxied IP. The web UI (443/80) is reachable this way too,
+  # just without NPM's wildcard cert in front of it for now.
+  - domain: "freeipa.example.lab"
+    answer: "10.20.30.42"
+  # media-pi: Pi 5 Plasma Bigscreen (was media-pi-old, 10.20.1.119) - Wi-Fi, UniFi
+  # fixed IP on its real MAC 2c:cf:67:91:ea:cb.
+  - domain: "media-pi.example.lab"
+    answer: "10.20.1.123"
+  # wall-display: Pi Zero 2 W wall display on IoT VLAN 4 (UniFi DHCP reservation).
+  - domain: "wall-display.example.lab"
+    answer: "10.20.4.177"
+  # devbox: Claude Code + tmux dev VM - SSH only, no web UI, so direct.
+  - domain: "devbox.example.lab"
+    answer: "10.20.30.57"
+  - domain: "proxcenter.example.lab"
+    answer: "10.20.30.11"
+  # Direct to step-ca's own IP, NOT NPM - internal PKI/CA. Deliberately
+  # never routed through the public wildcard proxy: the whole point is
+  # internal-only hostnames never touching the public ACME process (see
+  # docs/todo.md), so this domain itself also stays off NPM/Traefik and
+  # any public DNS record, resolved only via this internal rewrite.
+  # ACME clients hit step-ca directly on :9000, matching its own default
+  # convention (like prometheus/loki/ollama above).
+  - domain: "step-ca.example.lab"
+    answer: "10.20.30.47"
+  # Direct to the actual-http-api wrapper's own IP, not NPM - a LAN-only
+  # machine-to-machine API (the LLM-categorization script's caller), not
+  # a human-facing web app. Added 2026-08-25 - matches the reasoning
+  # already written up in scripts/check_stale_ip_refs.py's own SOP: give
+  # every service a real hostname, don't leave raw-IP references lying
+  # around for the next redeploy to silently break.
+  - domain: "actual-http-api.example.lab"
+    answer: "10.20.30.35"
+  # Direct to printer's own IP, not NPM - a physical printer/scanner's
+  # EWS admin page on the Default VLAN, not a proxied web app. Added
+  # 2026-09-04 alongside the Scan-to-Paperless build (docs/todo.md).
+  - domain: "printer.example.lab"
+    answer: "10.20.1.131"
+  # Direct to the shared Postgres LXC, not NPM - raw TCP DB on :5432, not
+  # HTTP. Consumers connect by hostname per the no-raw-IP convention. Added
+  # 2026-09-05, audiobook-stack Phase 1 (docs/todo.md).
+  - domain: "postgres.example.lab"
+    answer: "10.20.30.52"
+  - domain: "it-tools.example.lab"
+    answer: "10.20.30.11"
+  - domain: "bookstack.example.lab"
+    answer: "10.20.30.11"
+  - domain: "search.example.lab"
+    answer: "10.20.30.11"
+  - domain: "omniroute.example.lab"
+    answer: "10.20.30.11"
+  - domain: "netalertx.example.lab"
+    answer: "10.20.30.11"
+  - domain: "atuin.example.lab"
+    answer: "10.20.30.11"
+  - domain: "immich.example.lab"
+    answer: "10.20.30.11"
+  - domain: "recipes.example.lab"   # Mealie (LXC 155), 2026-10-15
+    answer: "10.20.30.11"
+  - domain: "karakeep.example.lab"  # transcriber (LXC 156), 2026-10-27
+    answer: "10.20.30.11"
+
+# Rewrites to delete if present, after a service is retired. The play only
+# replaces rewrites whose answer changed; it never removes one just because it
+# left adguard_rewrites, so retired names go here.
+adguard_rewrites_absent:
+  - "projects.example.lab"  # projects site retired 2026-11-02 (Obsidian on workstation instead)
