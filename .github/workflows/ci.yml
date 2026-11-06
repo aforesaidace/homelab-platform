@@ -11,8 +11,8 @@ jobs:
   ansible:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install Ansible, linters and collections
@@ -33,10 +33,14 @@ jobs:
   opentofu:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: opentofu/setup-opentofu@v1
       - name: Format check
         run: tofu -chdir=tofu fmt -check -recursive
+      # providers.tf reads the automation SSH key with file(), which must
+      # exist at validate time; CI gets a throwaway key in its place.
+      - name: Placeholder SSH key
+        run: mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/ansible_ed25519
       - name: Validate
         run: |
           tofu -chdir=tofu init -backend=false -input=false
@@ -45,7 +49,7 @@ jobs:
   secrets:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
